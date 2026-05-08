@@ -16,12 +16,12 @@ def generate_marker(dictionary: int, marker_id: int, side_pixels: int) -> MatLik
 def save_markers(
     num_markers: int,
     side_pixels: int,
-    output_dir: str,
+    output_dir: str | Path,
     dictionary: int = cv2.aruco.DICT_4X4_250,
 ) -> None:
     for i in range(num_markers):
         image = generate_marker(dictionary, i, side_pixels)
-        cv2.imwrite(Path(output_dir + f"marker_{i}.png"), image)
+        cv2.imwrite(str(Path(output_dir) / f"marker_{i}.png"), image)
 
 
 def main() -> None:
