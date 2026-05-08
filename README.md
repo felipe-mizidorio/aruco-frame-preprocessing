@@ -17,6 +17,7 @@ Given a video source, the pipeline:
 | Package | Version | Purpose |
 |---|---|---|
 | `opencv-contrib-python` | >=4.13 | ArUco detection and image processing |
+| `opencv-python` | >=4.13 | Core OpenCV image I/O and processing |
 | `numpy` | >=2.4 | Numerical operations |
 | `torch` | >=2.11 | DeepArUco inference |
 | `torchvision` | >=0.26 | Image transforms for PyTorch |
