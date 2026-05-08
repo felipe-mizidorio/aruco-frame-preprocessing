@@ -25,18 +25,18 @@ Given a video source, the pipeline:
 
 ## Installation
 
-Requires Python >=3.12, <3.15 (excluding 3.14.1) and [Poetry](https://python-poetry.org/).
+Requires Python >=3.12, <3.15 (excluding 3.14.1) and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 # Clone the repo
 git clone https://github.com/felipe-mizidorio/aruco-frame-preprocessing.git
 cd aruco-frame-preprocessing
 
-# Install dependencies
-poetry install
+# Install dependencies (including dev)
+uv sync --dev
 
 # Install pre-commit hooks
-poetry run pre-commit install
+uv run pre-commit install
 ```
 
 ## Usage
@@ -44,7 +44,7 @@ poetry run pre-commit install
 ### Generate ArUco markers
 
 ```bash
-poetry run python src/generate_markers.py
+uv run python src/generate_markers.py
 ```
 
 Outputs 10 markers (200x200 px, `DICT_4X4_250`) to `data/raw/`.
@@ -71,11 +71,11 @@ aruco-frame-preprocessing/
 
 ```bash
 # Lint and format
-poetry run ruff check --fix src/
-poetry run ruff format src/
+uv run ruff check --fix src/
+uv run ruff format src/
 
 # Type check
-poetry run pyright
+uv run pyright
 ```
 
 Pre-commit hooks run `ruff-check` and `ruff-format` automatically on each commit.
