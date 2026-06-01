@@ -133,8 +133,8 @@ def _entry(filename: str, frame_index: int, ids: list[int], corners: list) -> di
 
 
 def _corner(x: float, y: float) -> list:
-    # Single marker in OpenCV format [[[x,y],[x,y],[x,y],[x,y]]]
-    return [[[x, y], [x + 10, y], [x + 10, y + 10], [x, y + 10]]]
+    # Single marker in OpenCV format: corners[i] = [[[x,y],[x,y],[x,y],[x,y]]] (shape 1x4x2)
+    return [[[[x, y], [x + 10, y], [x + 10, y + 10], [x, y + 10]]]]
 
 
 def test_compare_frame_both_agree() -> None:

@@ -249,8 +249,8 @@ def _mean_corner_distance(
         if id_ not in da_ids:
             continue
         idx_b = da_ids.index(id_)
-        pts_a = np.array(ca, dtype=float)  # shape (4, 2)
-        pts_b = np.array(da_corners[idx_b], dtype=float)
+        pts_a = np.array(ca[0], dtype=float)  # shape (4, 2)
+        pts_b = np.array(da_corners[idx_b][0], dtype=float)
         distances.append(float(np.mean(np.linalg.norm(pts_a - pts_b, axis=1))))
     return float(np.mean(distances)) if distances else 0.0
 
