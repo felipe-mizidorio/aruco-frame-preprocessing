@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 import urllib.request
@@ -383,3 +384,51 @@ def save_comparison(
         summary.get("id_agreement_rate", 0.0) * 100,
         summary.get("mean_corner_distance_px", 0.0),
     )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Compare OpenCV ArUco detection against DeepArUco on the same frames."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--detections",
+        type=Path,
+        required=True,
+        help="Path to detections.json produced by aruco_detection.py.",
+    )
+    parser.add_argument(
+        "--model-weights",
+        type=Path,
+        default=None,
+        help=(
+            "Directory containing DeepArUco model files. "
+            "Auto-downloads to ~/.cache/deeparuco/ if omitted."
+        ),
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+
+    detections = load_detections(args.detections)
+    frames_dir = args.detections.parent
+
+    models = load_deeparuco_models(args.model_weights)
+    da_results = run_deeparuco(detections, frames_dir, models)
+
+    compared = compare_frames(detections["detections"], da_results)
+    summary = compute_metrics(compared)
+    save_comparison(
+        compared,
+        summary,
+        frames_dir,
+        weights_path=args.model_weights or DEFAULT_WEIGHTS_DIR,
+    )
+
+
+if __name__ == "__main__":
+    main()

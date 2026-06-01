@@ -13,6 +13,7 @@ from deeparuco_comparison import (
     compute_metrics,
     load_deeparuco_models,
     load_detections,
+    parse_args,
     run_deeparuco,
     run_deeparuco_on_image,
     save_comparison,
@@ -260,3 +261,28 @@ def test_save_comparison_logs_output_path(tmp_path: Path, caplog) -> None:
     with caplog.at_level(logging.INFO, logger="deeparuco_comparison"):
         save_comparison([], summary, tmp_path, weights_path=tmp_path / "w.pt")
     assert any("comparison.json" in r.message for r in caplog.records)
+
+
+def test_parse_args_requires_detections(monkeypatch) -> None:
+    monkeypatch.setattr("sys.argv", ["deeparuco_comparison.py"])
+    with pytest.raises(SystemExit):
+        parse_args()
+
+
+def test_parse_args_detections_only(monkeypatch, tmp_path: Path) -> None:
+    p = tmp_path / "detections.json"
+    monkeypatch.setattr("sys.argv", ["deeparuco_comparison.py", "--detections", str(p)])
+    args = parse_args()
+    assert args.detections == p
+    assert args.model_weights is None
+
+
+def test_parse_args_with_model_weights(monkeypatch, tmp_path: Path) -> None:
+    p = tmp_path / "detections.json"
+    w = tmp_path / "weights"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["deeparuco_comparison.py", "--detections", str(p), "--model-weights", str(w)],
+    )
+    args = parse_args()
+    assert args.model_weights == w
