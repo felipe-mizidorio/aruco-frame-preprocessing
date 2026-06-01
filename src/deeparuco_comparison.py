@@ -194,3 +194,45 @@ def run_deeparuco_on_image(
         result_ids.append(id_)
 
     return result_corners, result_ids
+
+
+def run_deeparuco(
+    detections: dict,
+    frames_dir: Path,
+    models: DeepArucoModels,
+) -> list[dict]:
+    results: list[dict] = []
+    entries = detections["detections"]
+
+    for i, entry in enumerate(entries):
+        if i % 50 == 0:
+            logger.info("Progress: %d / %d frames processed", i, len(entries))
+
+        frame_path = frames_dir / entry["filename"]
+        if not frame_path.exists():
+            logger.warning("Frame not found, skipping: %s", frame_path)
+            continue
+
+        image = cv2.imread(str(frame_path))
+        if image is None:
+            logger.warning("Cannot load image: %s", frame_path)
+            continue
+
+        corners, ids = run_deeparuco_on_image(image, models)
+
+        results.append(
+            {
+                "filename": entry["filename"],
+                "frame_index": entry["frame_index"],
+                "markers_detected": len(ids),
+                "marker_ids": ids,
+                "corners": corners,
+            }
+        )
+
+    logger.info(
+        "DeepArUco inference complete. %d / %d frames processed.",
+        len(results),
+        len(entries),
+    )
+    return results
