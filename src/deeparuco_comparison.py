@@ -191,7 +191,7 @@ def run_deeparuco_on_image(
             [det[0] + flat_cs[i] * w, det[1] + flat_cs[i + 1] * h]
             for i in range(0, 8, 2)
         ]
-        result_corners.append([pixel_corners])  # OpenCV format: [[[x,y],...]]
+        result_corners.append([pixel_corners])  # type: ignore[arg-type]  # OpenCV format: [[[x,y],...]]
         result_ids.append(id_)
 
     return result_corners, result_ids
