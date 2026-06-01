@@ -315,3 +315,41 @@ def compare_frames(cv_results: list[dict], da_results: list[dict]) -> list[dict]
         )
 
     return output
+
+
+def compute_metrics(compared_frames: list[dict]) -> dict:
+    total = len(compared_frames)
+    if total == 0:
+        return {
+            "opencv_detection_rate": 0.0,
+            "deeparuco_detection_rate": 0.0,
+            "id_agreement_rate": 0.0,
+            "mean_corner_distance_px": 0.0,
+        }
+
+    cv_detected = sum(1 for f in compared_frames if f["opencv"]["markers_detected"] > 0)
+    da_detected = sum(
+        1 for f in compared_frames if f["deeparuco"]["markers_detected"] > 0
+    )
+
+    both_detected = [
+        f
+        for f in compared_frames
+        if f["opencv"]["markers_detected"] > 0
+        and f["deeparuco"]["markers_detected"] > 0
+    ]
+    agreed = sum(1 for f in both_detected if f["comparison"]["id_agreement"])
+    id_agreement_rate = agreed / len(both_detected) if both_detected else 0.0
+
+    matched_frames = [
+        f for f in compared_frames if f["comparison"]["matched_markers"] > 0
+    ]
+    corner_dists = [f["comparison"]["mean_corner_distance_px"] for f in matched_frames]
+    mean_corner_dist = float(np.mean(corner_dists)) if corner_dists else 0.0
+
+    return {
+        "opencv_detection_rate": cv_detected / total,
+        "deeparuco_detection_rate": da_detected / total,
+        "id_agreement_rate": id_agreement_rate,
+        "mean_corner_distance_px": mean_corner_dist,
+    }

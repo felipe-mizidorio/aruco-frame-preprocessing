@@ -10,6 +10,7 @@ from deeparuco_comparison import (
     DeepArucoModels,
     compare_frame,
     compare_frames,
+    compute_metrics,
     load_deeparuco_models,
     load_detections,
     run_deeparuco,
@@ -182,3 +183,49 @@ def test_compare_frames_returns_one_entry_per_frame() -> None:
     assert "opencv" in result[0]
     assert "deeparuco" in result[0]
     assert "comparison" in result[0]
+
+
+def _cframe(cv_det: bool, da_det: bool, matched: int = 0, dist: float = 0.0) -> dict:
+    return {
+        "opencv": {"markers_detected": 1 if cv_det else 0},
+        "deeparuco": {"markers_detected": 1 if da_det else 0},
+        "comparison": {
+            "matched_markers": matched,
+            "mean_corner_distance_px": dist,
+            "id_agreement": matched > 0,
+        },
+    }
+
+
+def test_compute_metrics_all_detected() -> None:
+    frames = [
+        _cframe(True, True, matched=1, dist=2.0),
+        _cframe(True, True, matched=1, dist=4.0),
+    ]
+    m = compute_metrics(frames)
+    assert m["opencv_detection_rate"] == pytest.approx(1.0)
+    assert m["deeparuco_detection_rate"] == pytest.approx(1.0)
+    assert m["id_agreement_rate"] == pytest.approx(1.0)
+    assert m["mean_corner_distance_px"] == pytest.approx(3.0)
+
+
+def test_compute_metrics_none_detected() -> None:
+    frames = [_cframe(False, False), _cframe(False, False)]
+    m = compute_metrics(frames)
+    assert m["opencv_detection_rate"] == pytest.approx(0.0)
+    assert m["deeparuco_detection_rate"] == pytest.approx(0.0)
+
+
+def test_compute_metrics_partial() -> None:
+    frames = [_cframe(True, True, matched=1), _cframe(True, False)]
+    m = compute_metrics(frames)
+    assert m["opencv_detection_rate"] == pytest.approx(1.0)
+    assert m["deeparuco_detection_rate"] == pytest.approx(0.5)
+
+
+def test_compute_metrics_empty() -> None:
+    m = compute_metrics([])
+    assert m["opencv_detection_rate"] == pytest.approx(0.0)
+    assert m["deeparuco_detection_rate"] == pytest.approx(0.0)
+    assert m["id_agreement_rate"] == pytest.approx(0.0)
+    assert m["mean_corner_distance_px"] == pytest.approx(0.0)
