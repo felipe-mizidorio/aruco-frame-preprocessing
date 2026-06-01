@@ -2,9 +2,15 @@ import json
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
 import pytest
 
-from deeparuco_comparison import DeepArucoModels, load_deeparuco_models, load_detections
+from deeparuco_comparison import (
+    DeepArucoModels,
+    load_deeparuco_models,
+    load_detections,
+    run_deeparuco_on_image,
+)
 
 
 def test_load_detections_raises_when_file_missing(tmp_path: Path) -> None:
@@ -54,3 +60,20 @@ def test_load_deeparuco_models_returns_dataclass(tmp_path: Path) -> None:
 def test_load_deeparuco_models_raises_when_model_file_missing(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="Model file not found"):
         load_deeparuco_models(tmp_path)
+
+
+def test_run_deeparuco_on_image_no_detections_returns_empty() -> None:
+    image = np.zeros((200, 200, 3), dtype=np.uint8)
+
+    boxes_mock = mock.MagicMock()
+    boxes_mock.__len__ = mock.Mock(return_value=0)
+    detector_result = mock.MagicMock()
+    detector_result.cpu.return_value.boxes = boxes_mock
+
+    models = mock.MagicMock(spec=DeepArucoModels(None, None, None, None, None))
+    models.detector.return_value = [detector_result]
+
+    corners, ids = run_deeparuco_on_image(image, models)
+
+    assert corners == []
+    assert ids == []
