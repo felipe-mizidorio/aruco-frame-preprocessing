@@ -236,3 +236,82 @@ def run_deeparuco(
         len(entries),
     )
     return results
+
+
+def _mean_corner_distance(
+    cv_corners: list,
+    da_corners: list,
+    cv_ids: list[int],
+    da_ids: list[int],
+) -> float:
+    distances: list[float] = []
+    for id_, ca in zip(cv_ids, cv_corners):
+        if id_ not in da_ids:
+            continue
+        idx_b = da_ids.index(id_)
+        pts_a = np.array(ca, dtype=float)  # shape (4, 2)
+        pts_b = np.array(da_corners[idx_b], dtype=float)
+        distances.append(float(np.mean(np.linalg.norm(pts_a - pts_b, axis=1))))
+    return float(np.mean(distances)) if distances else 0.0
+
+
+def compare_frame(cv_entry: dict, da_entry: dict) -> dict:
+    cv_ids: list[int] = cv_entry["marker_ids"]
+    da_ids: list[int] = da_entry["marker_ids"]
+
+    matched = [id_ for id_ in cv_ids if id_ in da_ids]
+    unmatched_cv = [id_ for id_ in cv_ids if id_ not in da_ids]
+    unmatched_da = [id_ for id_ in da_ids if id_ not in cv_ids]
+
+    id_agreement = (
+        len(cv_ids) > 0
+        and len(da_ids) > 0
+        and len(unmatched_cv) == 0
+        and len(unmatched_da) == 0
+    )
+
+    return {
+        "matched_markers": len(matched),
+        "unmatched_opencv": len(unmatched_cv),
+        "unmatched_deeparuco": len(unmatched_da),
+        "id_agreement": id_agreement,
+        "mean_corner_distance_px": _mean_corner_distance(
+            cv_entry["corners"], da_entry["corners"], cv_ids, da_ids
+        ),
+    }
+
+
+def compare_frames(cv_results: list[dict], da_results: list[dict]) -> list[dict]:
+    da_by_filename = {r["filename"]: r for r in da_results}
+    output: list[dict] = []
+
+    for cv_entry in cv_results:
+        da_entry = da_by_filename.get(
+            cv_entry["filename"],
+            {
+                "filename": cv_entry["filename"],
+                "frame_index": cv_entry["frame_index"],
+                "markers_detected": 0,
+                "marker_ids": [],
+                "corners": [],
+            },
+        )
+        output.append(
+            {
+                "filename": cv_entry["filename"],
+                "frame_index": cv_entry["frame_index"],
+                "opencv": {
+                    "markers_detected": cv_entry["markers_detected"],
+                    "marker_ids": cv_entry["marker_ids"],
+                    "corners": cv_entry["corners"],
+                },
+                "deeparuco": {
+                    "markers_detected": da_entry["markers_detected"],
+                    "marker_ids": da_entry["marker_ids"],
+                    "corners": da_entry["corners"],
+                },
+                "comparison": compare_frame(cv_entry, da_entry),
+            }
+        )
+
+    return output

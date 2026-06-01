@@ -8,6 +8,8 @@ import pytest
 
 from deeparuco_comparison import (
     DeepArucoModels,
+    compare_frame,
+    compare_frames,
     load_deeparuco_models,
     load_detections,
     run_deeparuco,
@@ -116,3 +118,67 @@ def test_run_deeparuco_skips_missing_frame(tmp_path: Path) -> None:
     models = mock.MagicMock(spec=DeepArucoModels(None, None, None, None, None))
     result = run_deeparuco(detections_data, tmp_path, models)
     assert result == []
+
+
+def _entry(filename: str, frame_index: int, ids: list[int], corners: list) -> dict:
+    return {
+        "filename": filename,
+        "frame_index": frame_index,
+        "markers_detected": len(ids),
+        "marker_ids": ids,
+        "corners": corners,
+    }
+
+
+def _corner(x: float, y: float) -> list:
+    # Single marker in OpenCV format [[[x,y],[x,y],[x,y],[x,y]]]
+    return [[[x, y], [x + 10, y], [x + 10, y + 10], [x, y + 10]]]
+
+
+def test_compare_frame_both_agree() -> None:
+    cv_e = _entry("a.jpg", 0, [5], _corner(10, 10))
+    da_e = _entry("a.jpg", 0, [5], _corner(12, 12))
+    result = compare_frame(cv_e, da_e)
+    assert result["matched_markers"] == 1
+    assert result["unmatched_opencv"] == 0
+    assert result["unmatched_deeparuco"] == 0
+    assert result["id_agreement"] is True
+    assert result["mean_corner_distance_px"] > 0
+
+
+def test_compare_frame_no_id_overlap() -> None:
+    cv_e = _entry("a.jpg", 0, [3], _corner(0, 0))
+    da_e = _entry("a.jpg", 0, [7], _corner(0, 0))
+    result = compare_frame(cv_e, da_e)
+    assert result["matched_markers"] == 0
+    assert result["unmatched_opencv"] == 1
+    assert result["unmatched_deeparuco"] == 1
+    assert result["id_agreement"] is False
+
+
+def test_compare_frame_opencv_only() -> None:
+    cv_e = _entry("a.jpg", 0, [1], _corner(0, 0))
+    da_e = _entry("a.jpg", 0, [], [])
+    result = compare_frame(cv_e, da_e)
+    assert result["matched_markers"] == 0
+    assert result["unmatched_opencv"] == 1
+    assert result["unmatched_deeparuco"] == 0
+
+
+def test_compare_frame_corner_distance_zero_for_identical() -> None:
+    corners = _corner(50, 50)
+    cv_e = _entry("a.jpg", 0, [2], corners)
+    da_e = _entry("a.jpg", 0, [2], corners)
+    result = compare_frame(cv_e, da_e)
+    assert result["mean_corner_distance_px"] == pytest.approx(0.0)
+
+
+def test_compare_frames_returns_one_entry_per_frame() -> None:
+    cv_results = [_entry("a.jpg", 0, [1], _corner(0, 0))]
+    da_results = [_entry("a.jpg", 0, [1], _corner(2, 2))]
+    result = compare_frames(cv_results, da_results)
+    assert len(result) == 1
+    assert result[0]["filename"] == "a.jpg"
+    assert "opencv" in result[0]
+    assert "deeparuco" in result[0]
+    assert "comparison" in result[0]
