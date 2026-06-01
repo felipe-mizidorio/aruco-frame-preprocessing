@@ -15,6 +15,7 @@ from deeparuco_comparison import (
     load_detections,
     run_deeparuco,
     run_deeparuco_on_image,
+    save_comparison,
 )
 
 
@@ -229,3 +230,33 @@ def test_compute_metrics_empty() -> None:
     assert m["deeparuco_detection_rate"] == pytest.approx(0.0)
     assert m["id_agreement_rate"] == pytest.approx(0.0)
     assert m["mean_corner_distance_px"] == pytest.approx(0.0)
+
+
+def test_save_comparison_writes_file(tmp_path: Path) -> None:
+    save_comparison([], {}, tmp_path, weights_path=tmp_path / "w.pt")
+    assert (tmp_path / "comparison.json").exists()
+
+
+def test_save_comparison_schema(tmp_path: Path) -> None:
+    save_comparison([], {}, tmp_path, weights_path=tmp_path / "w.pt")
+    data = json.loads((tmp_path / "comparison.json").read_text())
+    assert "dictionary" in data
+    assert "model" in data
+    assert "weights_path" in data
+    assert "total_frames" in data
+    assert "summary" in data
+    assert "frames" in data
+
+
+def test_save_comparison_logs_output_path(tmp_path: Path, caplog) -> None:
+    import logging
+
+    summary = {
+        "opencv_detection_rate": 1.0,
+        "deeparuco_detection_rate": 0.9,
+        "id_agreement_rate": 0.8,
+        "mean_corner_distance_px": 2.5,
+    }
+    with caplog.at_level(logging.INFO, logger="deeparuco_comparison"):
+        save_comparison([], summary, tmp_path, weights_path=tmp_path / "w.pt")
+    assert any("comparison.json" in r.message for r in caplog.records)

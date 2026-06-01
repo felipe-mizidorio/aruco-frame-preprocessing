@@ -353,3 +353,33 @@ def compute_metrics(compared_frames: list[dict]) -> dict:
         "id_agreement_rate": id_agreement_rate,
         "mean_corner_distance_px": mean_corner_dist,
     }
+
+
+def save_comparison(
+    compared_frames: list[dict],
+    summary: dict,
+    output_dir: Path,
+    weights_path: Path,
+) -> None:
+    output = {
+        "dictionary": "DICT_4X4_250",
+        "model": "deeparuco",
+        "weights_path": str(weights_path),
+        "total_frames": len(compared_frames),
+        "summary": summary,
+        "frames": compared_frames,
+    }
+
+    out_path = output_dir / "comparison.json"
+    with out_path.open("w") as f:
+        json.dump(output, f, indent=2)
+
+    logger.info(
+        "Comparison saved to '%s'. opencv=%.1f%% da=%.1f%%"
+        " agreement=%.1f%% corner_dist=%.2fpx",
+        out_path,
+        summary.get("opencv_detection_rate", 0.0) * 100,
+        summary.get("deeparuco_detection_rate", 0.0) * 100,
+        summary.get("id_agreement_rate", 0.0) * 100,
+        summary.get("mean_corner_distance_px", 0.0),
+    )
