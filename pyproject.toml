@@ -29,12 +29,14 @@ dev = [
 
 [tool.ruff]
 target-version = "py312"
+exclude = ["src/deeparuco_vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
+"src/deeparuco_vendor/*" = ["E", "F", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
