@@ -8,7 +8,7 @@ from shapely.geometry import Polygon
 def ordered_corners(x_vals, y_vals):
 
     cx, cy = np.mean(x_vals), np.mean(y_vals)
-    angles = np.arctan2(x_vals - cx, y_vals - cy)
+    angles = np.arctan2(y_vals - cy, x_vals - cx)
     indices = np.argsort(angles)
 
     coords = [c for c in zip(x_vals, y_vals)]

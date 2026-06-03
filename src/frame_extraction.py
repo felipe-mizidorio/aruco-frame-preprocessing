@@ -53,7 +53,9 @@ def validate_input(video_path: Path) -> None:
         )
 
 
-def extract_frames(video_path: Path, stride: int, output_dir: Path) -> list[dict]:
+def extract_frames(
+    video_path: Path, stride: int, output_dir: Path
+) -> tuple[list[dict], float, int, int, int]:
     cap = cv2.VideoCapture(str(video_path))
 
     if not cap.isOpened():
@@ -64,6 +66,10 @@ def extract_frames(video_path: Path, stride: int, output_dir: Path) -> list[dict
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    if fps <= 0:
+        cap.release()
+        raise ValueError(f"Video reports invalid FPS ({fps}): {video_path}")
 
     logger.info(
         "Opened '%s' — %.2f fps, %d frames, %dx%d",
@@ -78,9 +84,10 @@ def extract_frames(video_path: Path, stride: int, output_dir: Path) -> list[dict
 
     pad_width = len(str(total_frames))
     frames_metadata: list[dict] = []
+    frames_expected = len(range(0, total_frames, stride))
 
     try:
-        for frame_index in range(0, total_frames, stride):
+        for i, frame_index in enumerate(range(0, total_frames, stride)):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
             ret, image = cap.read()
 
@@ -99,8 +106,8 @@ def extract_frames(video_path: Path, stride: int, output_dir: Path) -> list[dict
                 }
             )
 
-            if frame_index % 50 == 0:
-                logger.info("Progress: frame %d / %d", frame_index, total_frames)
+            if i % 50 == 0:
+                logger.info("Progress: frame %d / %d extracted", i, frames_expected)
 
     finally:
         cap.release()
@@ -110,7 +117,7 @@ def extract_frames(video_path: Path, stride: int, output_dir: Path) -> list[dict
         len(frames_metadata),
         output_dir,
     )
-    return frames_metadata
+    return frames_metadata, fps, total_frames, frame_width, frame_height
 
 
 def save_metadata(
@@ -152,14 +159,9 @@ def main() -> None:
         / f"{args.input.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     )
 
-    cap = cv2.VideoCapture(str(args.input))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    cap.release()
-
-    frames_metadata = extract_frames(args.input, args.stride, session_dir)
+    frames_metadata, fps, total_frames, frame_width, frame_height = extract_frames(
+        args.input, args.stride, session_dir
+    )
 
     save_metadata(
         video_path=args.input,

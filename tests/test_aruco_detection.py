@@ -86,7 +86,12 @@ def test_detect_markers_skips_missing_frame(tmp_path: Path) -> None:
 
     result = detect_markers(metadata, tmp_path)
 
-    assert result == []
+    assert len(result) == 1
+    assert result[0]["markers_detected"] == 0
+    assert result[0]["marker_ids"] == []
+    assert result[0]["corners"] == []
+    assert result[0]["filename"] == "missing.jpg"
+    assert result[0]["frame_index"] == 0
 
 
 def test_detect_markers_entry_schema(tmp_path: Path) -> None:

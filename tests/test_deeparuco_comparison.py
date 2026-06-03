@@ -50,12 +50,15 @@ def _make_fake_weights_dir(tmp_path: Path) -> Path:
 
 def test_load_deeparuco_models_returns_dataclass(tmp_path: Path) -> None:
     weights_dir = _make_fake_weights_dir(tmp_path)
-    with (
-        mock.patch("deeparuco_comparison.YOLO") as mock_yolo,
-        mock.patch("deeparuco_comparison.load_model") as mock_keras,
-    ):
-        mock_yolo.return_value = mock.MagicMock()
-        mock_keras.return_value = mock.MagicMock()
+    mock_tf = mock.MagicMock()
+    mock_ultralytics = mock.MagicMock()
+    fake_modules = {
+        "tensorflow": mock_tf,
+        "tensorflow.keras": mock_tf.keras,
+        "tensorflow.keras.models": mock_tf.keras.models,
+        "ultralytics": mock_ultralytics,
+    }
+    with mock.patch.dict("sys.modules", fake_modules):
         result = load_deeparuco_models(weights_dir)
 
     assert isinstance(result, DeepArucoModels)

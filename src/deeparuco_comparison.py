@@ -8,9 +8,6 @@ from typing import Any
 
 import cv2
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.models import load_model
-from ultralytics import YOLO
 
 from deeparuco_vendor.aruco import find_id
 from deeparuco_vendor.heatmaps import pos_from_heatmap
@@ -55,6 +52,10 @@ def _download_weights(target_dir: Path) -> None:
 
 
 def load_deeparuco_models(weights_dir: Path | None = None) -> DeepArucoModels:
+    import tensorflow as tf
+    from tensorflow.keras.models import load_model
+    from ultralytics import YOLO
+
     if weights_dir is None:
         _download_weights(DEFAULT_WEIGHTS_DIR)
         weights_dir = DEFAULT_WEIGHTS_DIR
@@ -182,7 +183,7 @@ def run_deeparuco_on_image(
 
     for raw_out, det, flat_cs in zip(decoder_out, xyxy_f, corners_ordered):
         id_, dist = find_id(raw_out)
-        if dist >= threshold:
+        if dist > threshold:
             continue
         w = det[2] - det[0]
         h = det[3] - det[1]
@@ -245,13 +246,15 @@ def _mean_corner_distance(
     cv_ids: list[int],
     da_ids: list[int],
 ) -> float:
+    da_corner_by_id = {id_: da_corners[i] for i, id_ in enumerate(da_ids)}
     distances: list[float] = []
+    seen: set[int] = set()
     for id_, ca in zip(cv_ids, cv_corners):
-        if id_ not in da_ids:
+        if id_ in seen or id_ not in da_corner_by_id:
             continue
-        idx_b = da_ids.index(id_)
+        seen.add(id_)
         pts_a = np.array(ca[0], dtype=float)  # shape (4, 2)
-        pts_b = np.array(da_corners[idx_b][0], dtype=float)
+        pts_b = np.array(da_corner_by_id[id_][0], dtype=float)
         distances.append(float(np.mean(np.linalg.norm(pts_a - pts_b, axis=1))))
     return float(np.mean(distances)) if distances else 0.0
 
@@ -260,9 +263,11 @@ def compare_frame(cv_entry: dict, da_entry: dict) -> dict:
     cv_ids: list[int] = cv_entry["marker_ids"]
     da_ids: list[int] = da_entry["marker_ids"]
 
-    matched = [id_ for id_ in cv_ids if id_ in da_ids]
-    unmatched_cv = [id_ for id_ in cv_ids if id_ not in da_ids]
-    unmatched_da = [id_ for id_ in da_ids if id_ not in cv_ids]
+    cv_id_set = set(cv_ids)
+    da_id_set = set(da_ids)
+    matched = sorted(cv_id_set & da_id_set)
+    unmatched_cv = sorted(cv_id_set - da_id_set)
+    unmatched_da = sorted(da_id_set - cv_id_set)
 
     id_agreement = (
         len(cv_ids) > 0

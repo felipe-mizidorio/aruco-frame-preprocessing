@@ -49,6 +49,15 @@ def detect_markers(metadata: dict, frames_dir: Path) -> list[dict]:
 
         if image is None:
             logger.error("Cannot load image: %s", frame_path)
+            detections.append(
+                {
+                    "filename": frame["filename"],
+                    "frame_index": frame["frame_index"],
+                    "markers_detected": 0,
+                    "marker_ids": [],
+                    "corners": [],
+                }
+            )
             continue
 
         corners, ids, _ = detector.detectMarkers(image)

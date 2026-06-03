@@ -76,7 +76,7 @@ def test_extract_frames_respects_stride(tmp_path: Path) -> None:
     make_test_video(video_path, num_frames=10)
     output_dir = tmp_path / "out"
 
-    frames = extract_frames(video_path, stride=5, output_dir=output_dir)
+    frames, *_ = extract_frames(video_path, stride=5, output_dir=output_dir)
 
     assert len(frames) == 2  # frames 0 and 5
 
@@ -86,7 +86,7 @@ def test_extract_frames_returns_correct_metadata(tmp_path: Path) -> None:
     make_test_video(video_path, num_frames=5)
     output_dir = tmp_path / "out"
 
-    frames = extract_frames(video_path, stride=1, output_dir=output_dir)
+    frames, *_ = extract_frames(video_path, stride=1, output_dir=output_dir)
 
     for entry in frames:
         assert "frame_index" in entry

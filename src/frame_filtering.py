@@ -47,9 +47,10 @@ def filter_frames(detections: dict, frames_dir: Path, min_markers: int) -> list[
     filtered_dir.mkdir(parents=True, exist_ok=True)
 
     passing: list[dict] = []
+    all_entries = detections["detections"]
+    total = len(all_entries)
 
-    for i, entry in enumerate(detections["detections"]):
-        total = len(detections["detections"])
+    for i, entry in enumerate(all_entries):
         if i % 50 == 0:
             logger.info("Progress: %d / %d frames processed", i, total)
 
@@ -76,15 +77,17 @@ def filter_frames(detections: dict, frames_dir: Path, min_markers: int) -> list[
 def save_filtered_detections(
     filtered: list[dict], detections: dict, output_dir: Path, min_markers: int
 ) -> None:
-    original_total = detections["total_frames"]
     frames_with_detections = sum(1 for d in filtered if d["markers_detected"] > 0)
+    frames_filtered_out = sum(
+        1 for d in detections["detections"] if d["markers_detected"] < min_markers
+    )
 
     output = {
         "dictionary": detections.get("dictionary", "DICT_4X4_250"),
         "min_markers": min_markers,
         "total_frames": len(filtered),
         "frames_with_detections": frames_with_detections,
-        "frames_filtered_out": original_total - len(filtered),
+        "frames_filtered_out": frames_filtered_out,
         "detections": filtered,
     }
 
@@ -96,7 +99,7 @@ def save_filtered_detections(
         "Filtered detections saved to '%s'. %d kept, %d filtered out.",
         out_path,
         len(filtered),
-        original_total - len(filtered),
+        frames_filtered_out,
     )
 
 
