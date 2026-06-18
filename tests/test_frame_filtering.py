@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from frame_filtering import filter_frames, load_detections, save_filtered_detections
+from frame_filtering import filter_frames, load_detections, save_manifest
 
 
 def make_detections(tmp_path: Path, detections: list[dict]) -> tuple[Path, dict]:
@@ -133,25 +133,22 @@ def test_filter_frames_skips_missing_source_file(tmp_path: Path) -> None:
     assert result == []
 
 
-# --- save_filtered_detections ---
+# --- save_manifest ---
 
 
-def test_save_filtered_detections_writes_file(tmp_path: Path) -> None:
+def test_save_manifest_writes_file(tmp_path: Path) -> None:
     _, original = make_detections(tmp_path, [])
-    filtered: list[dict] = []
-
-    save_filtered_detections(filtered, original, tmp_path, min_markers=1)
-
-    assert (tmp_path / "filtered_detections.json").exists()
+    save_manifest([], original, tmp_path, min_markers=1)
+    assert (tmp_path / "manifest.json").exists()
 
 
-def test_save_filtered_detections_schema(tmp_path: Path) -> None:
+def test_save_manifest_schema(tmp_path: Path) -> None:
     passing = {
         "filename": "frame_0000.jpg",
         "frame_index": 0,
         "markers_detected": 2,
         "marker_ids": [1, 2],
-        "corners": [],
+        "corners": [[[0, 0], [1, 0], [1, 1], [0, 1]], [[2, 0], [3, 0], [3, 1], [2, 1]]],
     }
     failing = {
         "filename": "frame_0001.jpg",
@@ -162,15 +159,20 @@ def test_save_filtered_detections_schema(tmp_path: Path) -> None:
     }
     _, original = make_detections(tmp_path, [passing, failing])
 
-    save_filtered_detections([passing], original, tmp_path, min_markers=1)
+    save_manifest([passing], original, tmp_path, min_markers=1)
 
-    output = json.loads((tmp_path / "filtered_detections.json").read_text())
+    output = json.loads((tmp_path / "manifest.json").read_text())
     assert output["dictionary"] == "DICT_4X4_250"
     assert output["min_markers"] == 1
-    assert output["total_frames"] == 1
-    assert output["frames_with_detections"] == 1
+    assert output["total_frames_input"] == 2
     assert output["frames_filtered_out"] == 1
-    assert output["detections"] == [passing]
+    assert output["frames"] == ["frame_0000.jpg"]
+    assert output["marker_detections"] == {
+        "frame_0000.jpg": [
+            {"id": 1, "corners": [[0, 0], [1, 0], [1, 1], [0, 1]]},
+            {"id": 2, "corners": [[2, 0], [3, 0], [3, 1], [2, 1]]},
+        ]
+    }
 
 
 # --- valid_ids filtering ---

@@ -110,29 +110,36 @@ def filter_frames(
     return passing
 
 
-def save_filtered_detections(
+def save_manifest(
     filtered: list[dict], detections: dict, output_dir: Path, min_markers: int
 ) -> None:
-    frames_with_detections = sum(1 for d in filtered if d["markers_detected"] > 0)
-    frames_filtered_out = sum(
-        1 for d in detections["detections"] if d["markers_detected"] < min_markers
-    )
+    frames = [entry["filename"] for entry in filtered]
+    marker_detections = {
+        entry["filename"]: [
+            {"id": mid, "corners": corners}
+            for mid, corners in zip(entry["marker_ids"], entry["corners"])
+        ]
+        for entry in filtered
+    }
+
+    total_frames_input = len(detections["detections"])
+    frames_filtered_out = total_frames_input - len(filtered)
 
     output = {
         "dictionary": detections.get("dictionary", "DICT_4X4_250"),
         "min_markers": min_markers,
-        "total_frames": len(filtered),
-        "frames_with_detections": frames_with_detections,
+        "total_frames_input": total_frames_input,
         "frames_filtered_out": frames_filtered_out,
-        "detections": filtered,
+        "frames": frames,
+        "marker_detections": marker_detections,
     }
 
-    out_path = output_dir / "filtered_detections.json"
+    out_path = output_dir / "manifest.json"
     with out_path.open("w") as f:
         json.dump(output, f, indent=2)
 
     logger.info(
-        "Filtered detections saved to '%s'. %d kept, %d filtered out.",
+        "Manifest saved to '%s'. %d kept, %d filtered out.",
         out_path,
         len(filtered),
         frames_filtered_out,
@@ -149,7 +156,7 @@ def main() -> None:
     filtered = filter_frames(
         detections, frames_dir, args.min_markers, valid_ids=valid_ids
     )
-    save_filtered_detections(filtered, detections, frames_dir, args.min_markers)
+    save_manifest(filtered, detections, frames_dir, args.min_markers)
 
 
 if __name__ == "__main__":
