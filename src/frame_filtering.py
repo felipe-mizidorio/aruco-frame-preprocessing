@@ -7,6 +7,23 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def strip_invalid_ids(entry: dict, valid_ids: set[int]) -> dict:
+    pairs = [
+        (mid, corner)
+        for mid, corner in zip(entry["marker_ids"], entry["corners"])
+        if mid in valid_ids
+    ]
+    if pairs:
+        ids, corners = zip(*pairs)
+        return {
+            **entry,
+            "marker_ids": list(ids),
+            "corners": list(corners),
+            "markers_detected": len(ids),
+        }
+    return {**entry, "marker_ids": [], "corners": [], "markers_detected": 0}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Filter frames by minimum number of detected ArUco markers.",
@@ -23,6 +40,17 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="Keep only frames with at least this many markers detected.",
+    )
+    parser.add_argument(
+        "--valid-ids",
+        type=int,
+        nargs="+",
+        default=None,
+        metavar="ID",
+        help=(
+            "Whitelist of valid marker IDs. "
+            "Detections with other IDs are stripped before filtering."
+        ),
     )
     return parser.parse_args()
 
@@ -42,7 +70,12 @@ def load_detections(detections_path: Path) -> dict:
             ) from e
 
 
-def filter_frames(detections: dict, frames_dir: Path, min_markers: int) -> list[dict]:
+def filter_frames(
+    detections: dict,
+    frames_dir: Path,
+    min_markers: int,
+    valid_ids: set[int] | None = None,
+) -> list[dict]:
     filtered_dir = frames_dir / "filtered"
     filtered_dir.mkdir(parents=True, exist_ok=True)
 
@@ -53,6 +86,9 @@ def filter_frames(detections: dict, frames_dir: Path, min_markers: int) -> list[
     for i, entry in enumerate(all_entries):
         if i % 50 == 0:
             logger.info("Progress: %d / %d frames processed", i, total)
+
+        if valid_ids is not None:
+            entry = strip_invalid_ids(entry, valid_ids)
 
         if entry["markers_detected"] < min_markers:
             continue
@@ -109,7 +145,10 @@ def main() -> None:
     detections = load_detections(args.detections)
     frames_dir = args.detections.parent
 
-    filtered = filter_frames(detections, frames_dir, args.min_markers)
+    valid_ids = set(args.valid_ids) if args.valid_ids is not None else None
+    filtered = filter_frames(
+        detections, frames_dir, args.min_markers, valid_ids=valid_ids
+    )
     save_filtered_detections(filtered, detections, frames_dir, args.min_markers)
 
 

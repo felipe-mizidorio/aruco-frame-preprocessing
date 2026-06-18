@@ -171,3 +171,110 @@ def test_save_filtered_detections_schema(tmp_path: Path) -> None:
     assert output["frames_with_detections"] == 1
     assert output["frames_filtered_out"] == 1
     assert output["detections"] == [passing]
+
+
+# --- valid_ids filtering ---
+
+
+def test_filter_frames_valid_ids_none_leaves_data_unchanged(tmp_path: Path) -> None:
+    (tmp_path / "frame_0000.jpg").write_bytes(b"img")
+
+    detections_data = {
+        "detections": [
+            {
+                "filename": "frame_0000.jpg",
+                "frame_index": 0,
+                "markers_detected": 3,
+                "marker_ids": [0, 5, 99],
+                "corners": [[[0, 0], [1, 0], [1, 1], [0, 1]]] * 3,
+            },
+        ]
+    }
+
+    result = filter_frames(detections_data, tmp_path, min_markers=1, valid_ids=None)
+
+    assert result[0]["marker_ids"] == [0, 5, 99]
+    assert result[0]["markers_detected"] == 3
+    assert len(result[0]["corners"]) == 3
+
+
+def test_filter_frames_valid_ids_strips_spurious_and_realigns_corners(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "frame_0000.jpg").write_bytes(b"img")
+
+    corner_valid_0 = [[[0, 0], [1, 0], [1, 1], [0, 1]]]
+    corner_valid_5 = [[[2, 0], [3, 0], [3, 1], [2, 1]]]
+    corner_spurious = [[[9, 0], [9, 1], [9, 2], [9, 3]]]
+
+    detections_data = {
+        "detections": [
+            {
+                "filename": "frame_0000.jpg",
+                "frame_index": 0,
+                "markers_detected": 3,
+                "marker_ids": [0, 99, 5],
+                "corners": corner_valid_0 + corner_spurious + corner_valid_5,
+            },
+        ]
+    }
+
+    result = filter_frames(
+        detections_data, tmp_path, min_markers=1, valid_ids={0, 1, 2, 3, 4, 5}
+    )
+
+    assert result[0]["marker_ids"] == [0, 5]
+    assert result[0]["markers_detected"] == 2
+    assert result[0]["corners"] == corner_valid_0 + corner_valid_5
+
+
+def test_filter_frames_valid_ids_all_valid_untouched(tmp_path: Path) -> None:
+    (tmp_path / "frame_0000.jpg").write_bytes(b"img")
+
+    corners = [[[0, 0], [1, 0], [1, 1], [0, 1]]] * 2
+
+    detections_data = {
+        "detections": [
+            {
+                "filename": "frame_0000.jpg",
+                "frame_index": 0,
+                "markers_detected": 2,
+                "marker_ids": [3, 7],
+                "corners": corners,
+            },
+        ]
+    }
+
+    result = filter_frames(
+        detections_data, tmp_path, min_markers=1, valid_ids={3, 7, 15}
+    )
+
+    assert result[0]["marker_ids"] == [3, 7]
+    assert result[0]["markers_detected"] == 2
+    assert result[0]["corners"] == corners
+
+
+def test_filter_frames_valid_ids_only_spurious_zeros_count_frame_kept(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "frame_0000.jpg").write_bytes(b"img")
+
+    detections_data = {
+        "detections": [
+            {
+                "filename": "frame_0000.jpg",
+                "frame_index": 0,
+                "markers_detected": 2,
+                "marker_ids": [86, 128],
+                "corners": [[[0, 0], [1, 0], [1, 1], [0, 1]]] * 2,
+            },
+        ]
+    }
+
+    result = filter_frames(
+        detections_data, tmp_path, min_markers=0, valid_ids={0, 1, 2}
+    )
+
+    assert result[0]["marker_ids"] == []
+    assert result[0]["markers_detected"] == 0
+    assert result[0]["corners"] == []
