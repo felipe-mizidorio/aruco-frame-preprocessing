@@ -40,6 +40,12 @@ uv sync --dev
 uv run pre-commit install
 ```
 
+`deeparuco_comparison.py` needs the deep-learning stack (`tensorflow`, `ultralytics`), which is an optional extra rather than a core dependency:
+
+```bash
+uv sync --dev --extra deeparuco
+```
+
 ## Usage
 
 ### Generate ArUco markers
