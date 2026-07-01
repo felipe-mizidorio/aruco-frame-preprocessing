@@ -1,96 +1,45 @@
 import json
 from pathlib import Path
 
-import pytest
-
-from frame_filtering import filter_frames, load_detections, save_manifest
-
-
-def make_detections(tmp_path: Path, detections: list[dict]) -> tuple[Path, dict]:
-    data = {
-        "dictionary": "DICT_4X4_250",
-        "total_frames": len(detections),
-        "frames_with_detections": sum(
-            1 for d in detections if d["markers_detected"] > 0
-        ),
-        "detections": detections,
-    }
-    path = tmp_path / "detections.json"
-    path.write_text(json.dumps(data))
-    return path, data
+from frame_filtering import filter_frames, save_manifest, strip_invalid_ids
+from schemas import DetectionEntry, DetectionsFile
 
 
-# --- load_detections ---
-
-
-def test_load_detections_raises_when_file_missing(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError):
-        load_detections(tmp_path / "nonexistent.json")
-
-
-def test_load_detections_raises_on_invalid_json(tmp_path: Path) -> None:
-    bad = tmp_path / "detections.json"
-    bad.write_text("not json")
-    with pytest.raises(ValueError):
-        load_detections(bad)
-
-
-def test_load_detections_returns_dict(tmp_path: Path) -> None:
-    path, data = make_detections(tmp_path, [])
-    result = load_detections(path)
-    assert result == data
+def make_detections(entries: list[DetectionEntry]) -> DetectionsFile:
+    return DetectionsFile(
+        dictionary="DICT_4X4_250",
+        total_frames=len(entries),
+        frames_with_detections=sum(1 for e in entries if e.markers_detected > 0),
+        detections=entries,
+    )
 
 
 # --- filter_frames ---
 
 
 def test_filter_frames_keeps_frames_at_or_above_threshold(tmp_path: Path) -> None:
-    frame_a = tmp_path / "frame_0000.jpg"
-    frame_b = tmp_path / "frame_0001.jpg"
-    frame_a.write_bytes(b"img")
-    frame_b.write_bytes(b"img")
+    (tmp_path / "frame_0000.jpg").write_bytes(b"img")
+    (tmp_path / "frame_0001.jpg").write_bytes(b"img")
 
-    detections_data = {
-        "detections": [
-            {
-                "filename": "frame_0000.jpg",
-                "frame_index": 0,
-                "markers_detected": 2,
-                "marker_ids": [1, 2],
-                "corners": [],
-            },
-            {
-                "filename": "frame_0001.jpg",
-                "frame_index": 1,
-                "markers_detected": 0,
-                "marker_ids": [],
-                "corners": [],
-            },
+    detections = make_detections(
+        [
+            DetectionEntry("frame_0000.jpg", 0, 2, [1, 2], []),
+            DetectionEntry("frame_0001.jpg", 1, 0, [], []),
         ]
-    }
+    )
 
-    result = filter_frames(detections_data, tmp_path, min_markers=1)
+    result = filter_frames(detections, tmp_path, min_markers=1)
 
     assert len(result) == 1
-    assert result[0]["filename"] == "frame_0000.jpg"
+    assert result[0].filename == "frame_0000.jpg"
 
 
 def test_filter_frames_copies_passing_frames_to_filtered_subdir(tmp_path: Path) -> None:
     (tmp_path / "frame_0000.jpg").write_bytes(b"img")
 
-    detections_data = {
-        "detections": [
-            {
-                "filename": "frame_0000.jpg",
-                "frame_index": 0,
-                "markers_detected": 1,
-                "marker_ids": [5],
-                "corners": [],
-            },
-        ]
-    }
+    detections = make_detections([DetectionEntry("frame_0000.jpg", 0, 1, [5], [])])
 
-    filter_frames(detections_data, tmp_path, min_markers=1)
+    filter_frames(detections, tmp_path, min_markers=1)
 
     assert (tmp_path / "filtered" / "frame_0000.jpg").exists()
 
@@ -98,38 +47,17 @@ def test_filter_frames_copies_passing_frames_to_filtered_subdir(tmp_path: Path) 
 def test_filter_frames_does_not_copy_failing_frames(tmp_path: Path) -> None:
     (tmp_path / "frame_0000.jpg").write_bytes(b"img")
 
-    detections_data = {
-        "detections": [
-            {
-                "filename": "frame_0000.jpg",
-                "frame_index": 0,
-                "markers_detected": 0,
-                "marker_ids": [],
-                "corners": [],
-            },
-        ]
-    }
+    detections = make_detections([DetectionEntry("frame_0000.jpg", 0, 0, [], [])])
 
-    filter_frames(detections_data, tmp_path, min_markers=1)
+    filter_frames(detections, tmp_path, min_markers=1)
 
     assert not (tmp_path / "filtered" / "frame_0000.jpg").exists()
 
 
 def test_filter_frames_skips_missing_source_file(tmp_path: Path) -> None:
-    detections_data = {
-        "detections": [
-            {
-                "filename": "missing.jpg",
-                "frame_index": 0,
-                "markers_detected": 3,
-                "marker_ids": [1, 2, 3],
-                "corners": [],
-            },
-        ]
-    }
+    detections = make_detections([DetectionEntry("missing.jpg", 0, 3, [1, 2, 3], [])])
 
-    # Should not raise, just skip
-    result = filter_frames(detections_data, tmp_path, min_markers=1)
+    result = filter_frames(detections, tmp_path, min_markers=1)
     assert result == []
 
 
@@ -137,29 +65,32 @@ def test_filter_frames_skips_missing_source_file(tmp_path: Path) -> None:
 
 
 def test_save_manifest_writes_file(tmp_path: Path) -> None:
-    _, original = make_detections(tmp_path, [])
-    save_manifest([], original, tmp_path, min_markers=1)
+    detections = make_detections([])
+    save_manifest([], detections, tmp_path, min_markers=1)
     assert (tmp_path / "manifest.json").exists()
 
 
 def test_save_manifest_schema(tmp_path: Path) -> None:
-    passing = {
-        "filename": "frame_0000.jpg",
-        "frame_index": 0,
-        "markers_detected": 2,
-        "marker_ids": [1, 2],
-        "corners": [[[0, 0], [1, 0], [1, 1], [0, 1]], [[2, 0], [3, 0], [3, 1], [2, 1]]],
-    }
-    failing = {
-        "filename": "frame_0001.jpg",
-        "frame_index": 1,
-        "markers_detected": 0,
-        "marker_ids": [],
-        "corners": [],
-    }
-    _, original = make_detections(tmp_path, [passing, failing])
+    passing = DetectionEntry(
+        filename="frame_0000.jpg",
+        frame_index=0,
+        markers_detected=2,
+        marker_ids=[1, 2],
+        corners=[
+            [[0, 0], [1, 0], [1, 1], [0, 1]],
+            [[2, 0], [3, 0], [3, 1], [2, 1]],
+        ],
+    )
+    failing = DetectionEntry(
+        filename="frame_0001.jpg",
+        frame_index=1,
+        markers_detected=0,
+        marker_ids=[],
+        corners=[],
+    )
+    detections = make_detections([passing, failing])
 
-    save_manifest([passing], original, tmp_path, min_markers=1)
+    save_manifest([passing], detections, tmp_path, min_markers=1)
 
     output = json.loads((tmp_path / "manifest.json").read_text())
     assert output["dictionary"] == "DICT_4X4_250"
@@ -181,23 +112,16 @@ def test_save_manifest_schema(tmp_path: Path) -> None:
 def test_filter_frames_valid_ids_none_leaves_data_unchanged(tmp_path: Path) -> None:
     (tmp_path / "frame_0000.jpg").write_bytes(b"img")
 
-    detections_data = {
-        "detections": [
-            {
-                "filename": "frame_0000.jpg",
-                "frame_index": 0,
-                "markers_detected": 3,
-                "marker_ids": [0, 5, 99],
-                "corners": [[[0, 0], [1, 0], [1, 1], [0, 1]]] * 3,
-            },
-        ]
-    }
+    entry = DetectionEntry(
+        "frame_0000.jpg", 0, 3, [0, 5, 99], [[[0, 0], [1, 0], [1, 1], [0, 1]]] * 3
+    )
+    detections = make_detections([entry])
 
-    result = filter_frames(detections_data, tmp_path, min_markers=1, valid_ids=None)
+    result = filter_frames(detections, tmp_path, min_markers=1, valid_ids=None)
 
-    assert result[0]["marker_ids"] == [0, 5, 99]
-    assert result[0]["markers_detected"] == 3
-    assert len(result[0]["corners"]) == 3
+    assert result[0].marker_ids == [0, 5, 99]
+    assert result[0].markers_detected == 3
+    assert len(result[0].corners) == 3
 
 
 def test_filter_frames_valid_ids_strips_spurious_and_realigns_corners(
@@ -209,51 +133,36 @@ def test_filter_frames_valid_ids_strips_spurious_and_realigns_corners(
     corner_valid_5 = [[[2, 0], [3, 0], [3, 1], [2, 1]]]
     corner_spurious = [[[9, 0], [9, 1], [9, 2], [9, 3]]]
 
-    detections_data = {
-        "detections": [
-            {
-                "filename": "frame_0000.jpg",
-                "frame_index": 0,
-                "markers_detected": 3,
-                "marker_ids": [0, 99, 5],
-                "corners": corner_valid_0 + corner_spurious + corner_valid_5,
-            },
-        ]
-    }
+    entry = DetectionEntry(
+        "frame_0000.jpg",
+        0,
+        3,
+        [0, 99, 5],
+        corner_valid_0 + corner_spurious + corner_valid_5,
+    )
+    detections = make_detections([entry])
 
     result = filter_frames(
-        detections_data, tmp_path, min_markers=1, valid_ids={0, 1, 2, 3, 4, 5}
+        detections, tmp_path, min_markers=1, valid_ids={0, 1, 2, 3, 4, 5}
     )
 
-    assert result[0]["marker_ids"] == [0, 5]
-    assert result[0]["markers_detected"] == 2
-    assert result[0]["corners"] == corner_valid_0 + corner_valid_5
+    assert result[0].marker_ids == [0, 5]
+    assert result[0].markers_detected == 2
+    assert result[0].corners == corner_valid_0 + corner_valid_5
 
 
 def test_filter_frames_valid_ids_all_valid_untouched(tmp_path: Path) -> None:
     (tmp_path / "frame_0000.jpg").write_bytes(b"img")
 
     corners = [[[0, 0], [1, 0], [1, 1], [0, 1]]] * 2
+    entry = DetectionEntry("frame_0000.jpg", 0, 2, [3, 7], corners)
+    detections = make_detections([entry])
 
-    detections_data = {
-        "detections": [
-            {
-                "filename": "frame_0000.jpg",
-                "frame_index": 0,
-                "markers_detected": 2,
-                "marker_ids": [3, 7],
-                "corners": corners,
-            },
-        ]
-    }
+    result = filter_frames(detections, tmp_path, min_markers=1, valid_ids={3, 7, 15})
 
-    result = filter_frames(
-        detections_data, tmp_path, min_markers=1, valid_ids={3, 7, 15}
-    )
-
-    assert result[0]["marker_ids"] == [3, 7]
-    assert result[0]["markers_detected"] == 2
-    assert result[0]["corners"] == corners
+    assert result[0].marker_ids == [3, 7]
+    assert result[0].markers_detected == 2
+    assert result[0].corners == corners
 
 
 def test_filter_frames_valid_ids_only_spurious_zeros_count_frame_kept(
@@ -261,22 +170,26 @@ def test_filter_frames_valid_ids_only_spurious_zeros_count_frame_kept(
 ) -> None:
     (tmp_path / "frame_0000.jpg").write_bytes(b"img")
 
-    detections_data = {
-        "detections": [
-            {
-                "filename": "frame_0000.jpg",
-                "frame_index": 0,
-                "markers_detected": 2,
-                "marker_ids": [86, 128],
-                "corners": [[[0, 0], [1, 0], [1, 1], [0, 1]]] * 2,
-            },
-        ]
-    }
-
-    result = filter_frames(
-        detections_data, tmp_path, min_markers=0, valid_ids={0, 1, 2}
+    entry = DetectionEntry(
+        "frame_0000.jpg", 0, 2, [86, 128], [[[0, 0], [1, 0], [1, 1], [0, 1]]] * 2
     )
+    detections = make_detections([entry])
 
-    assert result[0]["marker_ids"] == []
-    assert result[0]["markers_detected"] == 0
-    assert result[0]["corners"] == []
+    result = filter_frames(detections, tmp_path, min_markers=0, valid_ids={0, 1, 2})
+
+    assert result[0].marker_ids == []
+    assert result[0].markers_detected == 0
+    assert result[0].corners == []
+
+
+# --- strip_invalid_ids ---
+
+
+def test_strip_invalid_ids_returns_new_entry_with_only_valid_ids() -> None:
+    entry = DetectionEntry(
+        "a.jpg", 0, 2, [1, 99], [[[0, 0], [1, 0], [1, 1], [0, 1]]] * 2
+    )
+    result = strip_invalid_ids(entry, valid_ids={1})
+    assert result.marker_ids == [1]
+    assert result.markers_detected == 1
+    assert entry.marker_ids == [1, 99]  # original entry is untouched
