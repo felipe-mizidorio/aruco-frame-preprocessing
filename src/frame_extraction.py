@@ -1,10 +1,12 @@
 import argparse
-import json
 import logging
 from datetime import datetime
 from pathlib import Path
 
 import cv2
+
+import pipeline_io
+from schemas import FrameEntry, VideoMetadata
 
 VALID_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 
@@ -55,7 +57,7 @@ def validate_input(video_path: Path) -> None:
 
 def extract_frames(
     video_path: Path, stride: int, output_dir: Path
-) -> tuple[list[dict], float, int, int, int]:
+) -> tuple[list[FrameEntry], float, int, int, int]:
     cap = cv2.VideoCapture(str(video_path))
 
     if not cap.isOpened():
@@ -83,7 +85,7 @@ def extract_frames(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     pad_width = len(str(total_frames))
-    frames_metadata: list[dict] = []
+    frames_metadata: list[FrameEntry] = []
     frames_expected = len(range(0, total_frames, stride))
 
     try:
@@ -99,15 +101,14 @@ def extract_frames(
             cv2.imwrite(str(output_dir / file_name), image)
 
             frames_metadata.append(
-                {
-                    "frame_index": frame_index,
-                    "timestamp_s": round(frame_index / fps, 4),
-                    "filename": file_name,
-                }
+                FrameEntry(
+                    frame_index=frame_index,
+                    timestamp_s=round(frame_index / fps, 4),
+                    filename=file_name,
+                )
             )
 
-            if i % 50 == 0:
-                logger.info("Progress: frame %d / %d extracted", i, frames_expected)
+            pipeline_io.log_progress(i, frames_expected)
 
     finally:
         cap.release()
@@ -127,40 +128,40 @@ def save_metadata(
     frame_width: int,
     frame_height: int,
     stride: int,
-    frames_metadata: list[dict],
+    frames_metadata: list[FrameEntry],
     output_dir: Path,
 ) -> None:
-    metadata = {
-        "source_video": str(video_path.resolve()),
-        "fps": fps,
-        "total_frames": total_frames,
-        "resolution": {"width": frame_width, "height": frame_height},
-        "stride": stride,
-        "frames_extracted": len(frames_metadata),
-        "extracted_at": datetime.now().isoformat(timespec="seconds"),
-        "opencv_version": cv2.__version__,
-        "frames": frames_metadata,
-    }
+    metadata = VideoMetadata(
+        source_video=str(video_path.resolve()),
+        fps=fps,
+        total_frames=total_frames,
+        resolution={"width": frame_width, "height": frame_height},
+        stride=stride,
+        frames_extracted=len(frames_metadata),
+        extracted_at=datetime.now().isoformat(timespec="seconds"),
+        opencv_version=cv2.__version__,
+        frames=frames_metadata,
+    )
 
     metadata_path = output_dir / "metadata.json"
-    with metadata_path.open("w") as f:
-        json.dump(metadata, f, indent=2)
+    pipeline_io.save_json(metadata.to_dict(), metadata_path)
 
     logger.info("Metadata saved to '%s'.", metadata_path)
 
 
 def main() -> None:
+    pipeline_io.configure_logging()
     args = parse_args()
 
     validate_input(args.input)
 
-    session_dir = (
+    output_session_dir = (
         args.output_dir
         / f"{args.input.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     )
 
     frames_metadata, fps, total_frames, frame_width, frame_height = extract_frames(
-        args.input, args.stride, session_dir
+        args.input, args.stride, output_session_dir
     )
 
     save_metadata(
@@ -171,7 +172,7 @@ def main() -> None:
         frame_height=frame_height,
         stride=args.stride,
         frames_metadata=frames_metadata,
-        output_dir=session_dir,
+        output_dir=output_session_dir,
     )
 
 

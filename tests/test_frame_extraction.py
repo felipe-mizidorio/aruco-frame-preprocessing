@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from frame_extraction import extract_frames, save_metadata, validate_input
+from schemas import FrameEntry
 
 
 def make_test_video(
@@ -81,7 +82,7 @@ def test_extract_frames_respects_stride(tmp_path: Path) -> None:
     assert len(frames) == 2  # frames 0 and 5
 
 
-def test_extract_frames_returns_correct_metadata(tmp_path: Path) -> None:
+def test_extract_frames_returns_frame_entries(tmp_path: Path) -> None:
     video_path = tmp_path / "test.avi"
     make_test_video(video_path, num_frames=5)
     output_dir = tmp_path / "out"
@@ -89,9 +90,8 @@ def test_extract_frames_returns_correct_metadata(tmp_path: Path) -> None:
     frames, *_ = extract_frames(video_path, stride=1, output_dir=output_dir)
 
     for entry in frames:
-        assert "frame_index" in entry
-        assert "timestamp_s" in entry
-        assert "filename" in entry
+        assert isinstance(entry, FrameEntry)
+        assert entry.filename.endswith(".jpg")
 
 
 # --- save_metadata ---
@@ -120,7 +120,7 @@ def test_save_metadata_schema(tmp_path: Path) -> None:
         frame_height=1080,
         stride=5,
         frames_metadata=[
-            {"frame_index": 0, "timestamp_s": 0.0, "filename": "frame_0.jpg"}
+            FrameEntry(frame_index=0, timestamp_s=0.0, filename="frame_0.jpg")
         ],
         output_dir=tmp_path,
     )
