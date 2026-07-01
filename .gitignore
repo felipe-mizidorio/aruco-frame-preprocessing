@@ -207,7 +207,8 @@ marimo/_lsp/
 __marimo__/
 
 # Data folder
-data/
+data/*
+!data/.gitkeep
 
 # Claude / superpowers
 CLAUDE.md
