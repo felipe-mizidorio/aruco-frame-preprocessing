@@ -1,11 +1,3 @@
-"""Typed dataclasses for the pipeline's JSON artifacts.
-
-Each dataclass mirrors the on-disk JSON shape documented in CLAUDE.md's
-"JSON schemas" section and provides from_dict()/to_dict() for the load/save
-boundary, so malformed input fails fast with a clear message instead of a
-KeyError deep inside a processing function.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

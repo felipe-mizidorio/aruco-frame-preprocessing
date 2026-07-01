@@ -1,5 +1,3 @@
-"""Shared I/O, logging, and path-resolution helpers used by every pipeline script."""
-
 from __future__ import annotations
 
 import json
