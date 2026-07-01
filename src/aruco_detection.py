@@ -80,7 +80,7 @@ def detect_markers(
                 filename=frame.filename,
                 frame_index=frame.frame_index,
                 markers_detected=len(corners),
-                marker_ids=ids.flatten().tolist(),
+                marker_ids=ids.flatten().tolist(),  # type: ignore[arg-type]  # numpy .tolist() is int at runtime
                 corners=[c.tolist() for c in corners],
             )
         )
