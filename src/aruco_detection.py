@@ -1,9 +1,11 @@
 import argparse
-import json
 import logging
 from pathlib import Path
 
 import cv2
+
+import pipeline_io
+from schemas import DetectionEntry, DetectionsFile, VideoMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -19,113 +21,112 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Path to the metadata file",
     )
+    parser.add_argument(
+        "--dictionary",
+        type=str,
+        default="DICT_4X4_250",
+        choices=sorted(pipeline_io.ARUCO_DICTIONARIES.keys()),
+        help="ArUco dictionary to use for detection.",
+    )
     return parser.parse_args()
 
 
-def load_metadata(metadata_path: Path) -> dict:
-    if not metadata_path.exists():
-        logger.error("Metadata file not found: %s", metadata_path)
-        raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
-
-    with metadata_path.open() as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError as e:
-            logger.error("Invalid JSON in metadata file: %s", metadata_path)
-            raise ValueError(f"Invalid JSON in metadata file: {metadata_path}") from e
-
-
-def detect_markers(metadata: dict, frames_dir: Path) -> list[dict]:
-    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
+def detect_markers(
+    metadata: VideoMetadata, frames_dir: Path, dictionary_name: str = "DICT_4X4_250"
+) -> list[DetectionEntry]:
+    dictionary = cv2.aruco.getPredefinedDictionary(
+        pipeline_io.ARUCO_DICTIONARIES[dictionary_name]
+    )
     params = cv2.aruco.DetectorParameters()
     detector = cv2.aruco.ArucoDetector(dictionary, params)
 
-    detections: list[dict] = []
-    frames = metadata["frames"]
+    detections: list[DetectionEntry] = []
+    frames = metadata.frames
 
     for i, frame in enumerate(frames):
-        frame_path = frames_dir / frame["filename"]
+        frame_path = frames_dir / frame.filename
         image = cv2.imread(str(frame_path))
 
         if image is None:
             logger.error("Cannot load image: %s", frame_path)
             detections.append(
-                {
-                    "filename": frame["filename"],
-                    "frame_index": frame["frame_index"],
-                    "markers_detected": 0,
-                    "marker_ids": [],
-                    "corners": [],
-                }
+                DetectionEntry(
+                    filename=frame.filename,
+                    frame_index=frame.frame_index,
+                    markers_detected=0,
+                    marker_ids=[],
+                    corners=[],
+                )
             )
             continue
 
         corners, ids, _ = detector.detectMarkers(image)
 
         if ids is None:
-            logger.warning("No markers detected in frame: %s", frame["filename"])
+            logger.warning("No markers detected in frame: %s", frame.filename)
             detections.append(
-                {
-                    "filename": frame["filename"],
-                    "frame_index": frame["frame_index"],
-                    "markers_detected": 0,
-                    "marker_ids": [],
-                    "corners": [],
-                }
+                DetectionEntry(
+                    filename=frame.filename,
+                    frame_index=frame.frame_index,
+                    markers_detected=0,
+                    marker_ids=[],
+                    corners=[],
+                )
             )
             continue
 
         detections.append(
-            {
-                "filename": frame["filename"],
-                "frame_index": frame["frame_index"],
-                "markers_detected": len(corners),
-                "marker_ids": ids.flatten().tolist(),
-                "corners": [c.tolist() for c in corners],
-            }
+            DetectionEntry(
+                filename=frame.filename,
+                frame_index=frame.frame_index,
+                markers_detected=len(corners),
+                marker_ids=ids.flatten().tolist(),
+                corners=[c.tolist() for c in corners],
+            )
         )
 
-        if i % 50 == 0:
-            logger.info(
-                "Progress: %d / %d frames processed (video frame index: %d)",
-                i,
-                len(frames),
-                frame["frame_index"],
-            )
+        pipeline_io.log_progress(i, len(frames))
 
     return detections
 
 
-def save_detections(detections: list[dict], metadata: dict, output_dir: Path) -> None:
-    frames_with_detections = sum(1 for d in detections if d["markers_detected"] > 0)
+def save_detections(
+    detections: list[DetectionEntry],
+    metadata: VideoMetadata,
+    output_dir: Path,
+    dictionary_name: str,
+) -> None:
+    frames_with_detections = sum(1 for d in detections if d.markers_detected > 0)
 
-    output = {
-        "dictionary": "DICT_4X4_250",
-        "total_frames": metadata["frames_extracted"],
-        "frames_with_detections": frames_with_detections,
-        "detections": detections,
-    }
+    output = DetectionsFile(
+        dictionary=dictionary_name,
+        total_frames=metadata.frames_extracted,
+        frames_with_detections=frames_with_detections,
+        detections=detections,
+    )
 
     detections_path = output_dir / "detections.json"
-    with detections_path.open("w") as f:
-        json.dump(output, f, indent=2)
+    pipeline_io.save_json(output.to_dict(), detections_path)
 
     logger.info(
         "Detections saved to '%s'. %d / %d frames with markers.",
         detections_path,
         frames_with_detections,
-        metadata["frames_extracted"],
+        metadata.frames_extracted,
     )
 
 
 def main() -> None:
+    pipeline_io.configure_logging()
     args = parse_args()
 
-    metadata = load_metadata(args.metadata)
-    frames_dir = args.metadata.parent
+    metadata = VideoMetadata.from_dict(
+        pipeline_io.load_json(args.metadata, "metadata"), source=str(args.metadata)
+    )
+    frames_dir = pipeline_io.session_dir(args.metadata)
 
-    detections = detect_markers(metadata, frames_dir)
-    save_detections(detections, metadata, frames_dir)
+    detections = detect_markers(metadata, frames_dir, args.dictionary)
+    save_detections(detections, metadata, frames_dir, args.dictionary)
 
 
 if __name__ == "__main__":
