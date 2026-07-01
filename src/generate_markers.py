@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,18 +7,12 @@ import cv2
 from cv2.typing import MatLike
 from fpdf import FPDF
 
+import pipeline_io
+from schemas import MarkerSheetManifest
+
 logger = logging.getLogger(__name__)
 
 MM_PER_INCH = 25.4
-
-DICTIONARY_NAME_TO_ENUM = {
-    "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
-    "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
-    "DICT_4X4_250": cv2.aruco.DICT_4X4_250,
-    "DICT_5X5_50": cv2.aruco.DICT_5X5_50,
-    "DICT_5X5_100": cv2.aruco.DICT_5X5_100,
-    "DICT_6X6_50": cv2.aruco.DICT_6X6_50,
-}
 
 PAGE_FORMATS_MM = {
     "A4": (210.0, 297.0),
@@ -58,7 +51,7 @@ def save_markers(
 ) -> list[Path]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    dictionary = DICTIONARY_NAME_TO_ENUM[dictionary_name]
+    dictionary = pipeline_io.ARUCO_DICTIONARIES[dictionary_name]
 
     paths: list[Path] = []
     generated_ids = []
@@ -71,21 +64,21 @@ def save_markers(
         paths.append(out_path)
         generated_ids.append(i)
 
-    manifest = {
-        "dictionary": dictionary_name,
-        "num_markers": num_markers,
-        "ids": generated_ids,
-        "side_pixels": side_pixels,
-        "margin_pixels": margin_pixels,
-        "total_image_side_pixels": side_pixels + 2 * margin_pixels,
-        "dpi": dpi,
-        "total_image_side_mm": round(
+    manifest = MarkerSheetManifest(
+        dictionary=dictionary_name,
+        num_markers=num_markers,
+        ids=generated_ids,
+        side_pixels=side_pixels,
+        margin_pixels=margin_pixels,
+        total_image_side_pixels=side_pixels + 2 * margin_pixels,
+        dpi=dpi,
+        total_image_side_mm=round(
             pixels_to_mm(side_pixels + 2 * margin_pixels, dpi), 3
         ),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    }
+        generated_at=datetime.now(timezone.utc).isoformat(),
+    )
     manifest_path = output_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2))
+    pipeline_io.save_json(manifest.to_dict(), manifest_path)
     logger.info("Manifest saved to %s", manifest_path)
 
     return paths
@@ -179,7 +172,7 @@ def parse_args() -> argparse.Namespace:
         "--dictionary",
         type=str,
         default="DICT_4X4_50",
-        choices=sorted(DICTIONARY_NAME_TO_ENUM.keys()),
+        choices=sorted(pipeline_io.ARUCO_DICTIONARIES.keys()),
         help="ArUco dictionary to use.",
     )
     parser.add_argument(
@@ -211,7 +204,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    pipeline_io.configure_logging()
     args = parse_args()
 
     marker_paths = save_markers(
