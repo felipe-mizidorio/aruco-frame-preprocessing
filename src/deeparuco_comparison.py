@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import urllib.request
 from dataclasses import dataclass
@@ -9,10 +8,12 @@ from typing import Any
 import cv2
 import numpy as np
 
+import pipeline_io
 from deeparuco_vendor.aruco import find_id
 from deeparuco_vendor.heatmaps import pos_from_heatmap
 from deeparuco_vendor.losses import weighted_loss
 from deeparuco_vendor.utils import marker_from_corners, ordered_corners
+from schemas import ComparisonFile, DetectionsFile
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,16 @@ _MODEL_FILENAMES = {
     "decoder": "dec_new.h5",
 }
 _BASE_URL = "https://raw.githubusercontent.com/AVAuco/deeparuco/master/models"
+
+# DeepArUco model calibration constants (from the upstream AVAuco/deeparuco pipeline).
+_DECODE_THRESHOLD = 9  # max hamming distance to accept a detection
+_DETECTOR_IOU = 0.5
+_DETECTOR_CONF = 0.03
+_BBOX_PADDING_RATIO = 0.2  # expand each detector box by this fraction on each side
+_CROP_SIZE = 64  # detector crop resolution fed to the corner regressor
+_MARKER_CROP_SIZE = 32  # perspective-warped marker resolution fed to the decoder
+_BLOB_AREA_PX = 75  # expected keypoint blob area in the regressor's heatmap output
+_BLOB_AREA_TOLERANCE = 0.2  # +/-20% around _BLOB_AREA_PX for the blob detector's filter
 
 
 @dataclass
@@ -92,24 +103,6 @@ def load_deeparuco_models(weights_dir: Path | None = None) -> DeepArucoModels:
     )
 
 
-def load_detections(detections_path: Path) -> dict:
-    if not detections_path.exists():
-        logger.error("Detections file not found: %s", detections_path)
-        raise FileNotFoundError(f"Detections file not found: {detections_path}")
-
-    with detections_path.open() as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError as e:
-            logger.error("Invalid JSON in detections file: %s", detections_path)
-            raise ValueError(
-                f"Invalid JSON in detections file: {detections_path}"
-            ) from e
-
-
-_DECODE_THRESHOLD = 9  # max hamming distance to accept a detection
-
-
 def _norm(x: np.ndarray) -> np.ndarray:
     return (x - np.min(x)) / (np.max(x) - np.min(x) + 1e-9)
 
@@ -120,17 +113,29 @@ def run_deeparuco_on_image(
     threshold: int = _DECODE_THRESHOLD,
 ) -> tuple[list[list[list[float]]], list[int]]:
     detections = (
-        models.detector(image, verbose=False, iou=0.5, conf=0.03)[0].cpu().boxes
+        models.detector(image, verbose=False, iou=_DETECTOR_IOU, conf=_DETECTOR_CONF)[0]
+        .cpu()
+        .boxes
     )
     if not len(detections):
         return [], []
 
     xyxy = [
         [
-            int(max(det[0] - (0.2 * (det[2] - det[0]) + 0.5), 0)),
-            int(max(det[1] - (0.2 * (det[3] - det[1]) + 0.5), 0)),
-            int(min(det[2] + (0.2 * (det[2] - det[0]) + 0.5), image.shape[1] - 1)),
-            int(min(det[3] + (0.2 * (det[3] - det[1]) + 0.5), image.shape[0] - 1)),
+            int(max(det[0] - (_BBOX_PADDING_RATIO * (det[2] - det[0]) + 0.5), 0)),
+            int(max(det[1] - (_BBOX_PADDING_RATIO * (det[3] - det[1]) + 0.5), 0)),
+            int(
+                min(
+                    det[2] + (_BBOX_PADDING_RATIO * (det[2] - det[0]) + 0.5),
+                    image.shape[1] - 1,
+                )
+            ),
+            int(
+                min(
+                    det[3] + (_BBOX_PADDING_RATIO * (det[3] - det[1]) + 0.5),
+                    image.shape[0] - 1,
+                )
+            ),
         ]
         for det in [
             [int(val) for val in det.xyxy.cpu().numpy()[0]] for det in detections
@@ -138,17 +143,17 @@ def run_deeparuco_on_image(
     ]
 
     crops_ori = [
-        cv2.resize(image[det[1] : det[3], det[0] : det[2]], (64, 64)) for det in xyxy
+        cv2.resize(image[det[1] : det[3], det[0] : det[2]], (_CROP_SIZE, _CROP_SIZE))
+        for det in xyxy
     ]
     crops = [_norm(crop) for crop in crops_ori]
 
     corners_raw = models.refine_corners(np.array(crops)).numpy()
 
-    area = 75
     kp_params = cv2.SimpleBlobDetector_Params()
     kp_params.filterByArea = True
-    kp_params.minArea = area * 0.8
-    kp_params.maxArea = area * 1.2
+    kp_params.minArea = _BLOB_AREA_PX * (1 - _BLOB_AREA_TOLERANCE)
+    kp_params.maxArea = _BLOB_AREA_PX * (1 + _BLOB_AREA_TOLERANCE)
     kp_detector = cv2.SimpleBlobDetector_create(kp_params)
 
     corners_normalized = [
@@ -173,7 +178,7 @@ def run_deeparuco_on_image(
 
     markers = []
     for crop, cs in zip(crops_f, corners_ordered):
-        marker = marker_from_corners(crop, cs, 32)
+        marker = marker_from_corners(crop, cs, _MARKER_CROP_SIZE)
         markers.append(_norm(cv2.cvtColor(marker, cv2.COLOR_BGR2GRAY)))
 
     decoder_out = np.round(models.decode_markers(np.array(markers)).numpy())
@@ -207,8 +212,7 @@ def run_deeparuco(
     entries = detections["detections"]
 
     for i, entry in enumerate(entries):
-        if i % 50 == 0:
-            logger.info("Progress: %d / %d frames processed", i, len(entries))
+        pipeline_io.log_progress(i, len(entries))
 
         frame_path = frames_dir / entry["filename"]
         if not frame_path.exists():
@@ -366,19 +370,23 @@ def save_comparison(
     summary: dict,
     output_dir: Path,
     weights_path: Path,
+    dictionary: str,
 ) -> None:
-    output = {
-        "dictionary": "DICT_4X4_250",
-        "model": "deeparuco",
-        "weights_path": str(weights_path),
-        "total_frames": len(compared_frames),
-        "summary": summary,
-        "frames": compared_frames,
-    }
+    # `dictionary` is the OpenCV-side dictionary actually used to produce
+    # detections.json. DeepArUco's own decoder always assumes DICT_4X4_250,
+    # since that's what the vendored model was trained on — that assumption
+    # is fixed and not reflected in this field.
+    output = ComparisonFile(
+        dictionary=dictionary,
+        model="deeparuco",
+        weights_path=str(weights_path),
+        total_frames=len(compared_frames),
+        summary=summary,
+        frames=compared_frames,
+    )
 
     out_path = output_dir / "comparison.json"
-    with out_path.open("w") as f:
-        json.dump(output, f, indent=2)
+    pipeline_io.save_json(output.to_dict(), out_path)
 
     logger.info(
         "Comparison saved to '%s'. opencv=%.1f%% da=%.1f%%"
@@ -417,10 +425,15 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    pipeline_io.configure_logging()
     args = parse_args()
 
-    detections = load_detections(args.detections)
-    frames_dir = args.detections.parent
+    detections_file = DetectionsFile.from_dict(
+        pipeline_io.load_json(args.detections, "detections"),
+        source=str(args.detections),
+    )
+    detections = detections_file.to_dict()
+    frames_dir = pipeline_io.session_dir(args.detections)
 
     models = load_deeparuco_models(args.model_weights)
     da_results = run_deeparuco(detections, frames_dir, models)
@@ -432,6 +445,7 @@ def main() -> None:
         summary,
         frames_dir,
         weights_path=args.model_weights or DEFAULT_WEIGHTS_DIR,
+        dictionary=detections_file.dictionary,
     )
 
 

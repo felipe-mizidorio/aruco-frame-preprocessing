@@ -12,32 +12,11 @@ from deeparuco_comparison import (
     compare_frames,
     compute_metrics,
     load_deeparuco_models,
-    load_detections,
     parse_args,
     run_deeparuco,
     run_deeparuco_on_image,
     save_comparison,
 )
-
-
-def test_load_detections_raises_when_file_missing(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError):
-        load_detections(tmp_path / "nonexistent.json")
-
-
-def test_load_detections_raises_on_invalid_json(tmp_path: Path) -> None:
-    bad = tmp_path / "detections.json"
-    bad.write_text("not json")
-    with pytest.raises(ValueError):
-        load_detections(bad)
-
-
-def test_load_detections_returns_dict(tmp_path: Path) -> None:
-    data = {"dictionary": "DICT_4X4_250", "total_frames": 0, "detections": []}
-    p = tmp_path / "detections.json"
-    p.write_text(json.dumps(data))
-    assert load_detections(p) == data
-
 
 _MODEL_FILES = ["det_luma_bc_s.pt", "reg_hmap_8.h5", "dec_new.h5"]
 
@@ -237,12 +216,16 @@ def test_compute_metrics_empty() -> None:
 
 
 def test_save_comparison_writes_file(tmp_path: Path) -> None:
-    save_comparison([], {}, tmp_path, weights_path=tmp_path / "w.pt")
+    save_comparison(
+        [], {}, tmp_path, weights_path=tmp_path / "w.pt", dictionary="DICT_4X4_250"
+    )
     assert (tmp_path / "comparison.json").exists()
 
 
 def test_save_comparison_schema(tmp_path: Path) -> None:
-    save_comparison([], {}, tmp_path, weights_path=tmp_path / "w.pt")
+    save_comparison(
+        [], {}, tmp_path, weights_path=tmp_path / "w.pt", dictionary="DICT_4X4_250"
+    )
     data = json.loads((tmp_path / "comparison.json").read_text())
     assert "dictionary" in data
     assert "model" in data
@@ -250,6 +233,14 @@ def test_save_comparison_schema(tmp_path: Path) -> None:
     assert "total_frames" in data
     assert "summary" in data
     assert "frames" in data
+
+
+def test_save_comparison_records_requested_dictionary(tmp_path: Path) -> None:
+    save_comparison(
+        [], {}, tmp_path, weights_path=tmp_path / "w.pt", dictionary="DICT_5X5_50"
+    )
+    data = json.loads((tmp_path / "comparison.json").read_text())
+    assert data["dictionary"] == "DICT_5X5_50"
 
 
 def test_save_comparison_logs_output_path(tmp_path: Path, caplog) -> None:
@@ -262,7 +253,13 @@ def test_save_comparison_logs_output_path(tmp_path: Path, caplog) -> None:
         "mean_corner_distance_px": 2.5,
     }
     with caplog.at_level(logging.INFO, logger="deeparuco_comparison"):
-        save_comparison([], summary, tmp_path, weights_path=tmp_path / "w.pt")
+        save_comparison(
+            [],
+            summary,
+            tmp_path,
+            weights_path=tmp_path / "w.pt",
+            dictionary="DICT_4X4_250",
+        )
     assert any("comparison.json" in r.message for r in caplog.records)
 
 
