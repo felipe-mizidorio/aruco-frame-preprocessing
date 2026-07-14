@@ -176,6 +176,9 @@ class FilterManifest:
     frames_filtered_out: int
     frames: list[str]
     marker_detections: dict[str, list[MarkerDetection]]
+    # Optional (added later): absent from manifests written by older versions.
+    sharpness: dict | None = None
+    tool_versions: dict | None = None
 
     @classmethod
     def from_dict(cls, data: dict, *, source: str = "manifest.json") -> FilterManifest:
@@ -201,10 +204,12 @@ class FilterManifest:
                 filename: [MarkerDetection.from_dict(m, source=source) for m in markers]
                 for filename, markers in data["marker_detections"].items()
             },
+            sharpness=data.get("sharpness"),
+            tool_versions=data.get("tool_versions"),
         )
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "dictionary": self.dictionary,
             "min_markers": self.min_markers,
             "total_frames_input": self.total_frames_input,
@@ -215,6 +220,12 @@ class FilterManifest:
                 for filename, markers in self.marker_detections.items()
             },
         }
+        # Optional fields are omitted when unset so old manifests round-trip.
+        if self.sharpness is not None:
+            data["sharpness"] = self.sharpness
+        if self.tool_versions is not None:
+            data["tool_versions"] = self.tool_versions
+        return data
 
 
 @dataclass

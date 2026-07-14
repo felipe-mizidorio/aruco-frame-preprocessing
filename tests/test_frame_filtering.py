@@ -1,8 +1,17 @@
 import json
 from pathlib import Path
 
-from frame_filtering import filter_frames, save_manifest, strip_invalid_ids
-from schemas import DetectionEntry, DetectionsFile
+import cv2
+import numpy as np
+
+from frame_filtering import (
+    compute_blur_rejects,
+    filter_frames,
+    save_manifest,
+    sharpness_score,
+    strip_invalid_ids,
+)
+from schemas import DetectionEntry, DetectionsFile, FilterManifest
 
 
 def make_detections(entries: list[DetectionEntry]) -> DetectionsFile:
@@ -180,6 +189,144 @@ def test_filter_frames_valid_ids_only_spurious_zeros_count_frame_kept(
     assert result[0].marker_ids == []
     assert result[0].markers_detected == 0
     assert result[0].corners == []
+
+
+# --- sharpness / blur filtering ---
+
+
+def write_sharp_frame(path: Path, rng: np.random.Generator) -> None:
+    img = rng.integers(0, 256, size=(120, 160, 3), dtype=np.uint8)
+    cv2.imwrite(str(path), img)
+
+
+def write_blurred_frame(path: Path, rng: np.random.Generator) -> None:
+    img = rng.integers(0, 256, size=(120, 160, 3), dtype=np.uint8)
+    cv2.imwrite(str(path), cv2.GaussianBlur(img, (31, 31), 12.0))
+
+
+def make_session(tmp_path: Path, n_sharp: int, n_blurred: int) -> DetectionsFile:
+    rng = np.random.default_rng(42)
+    entries = []
+    for i in range(n_sharp + n_blurred):
+        name = f"frame_{i:04d}.jpg"
+        if i < n_sharp:
+            write_sharp_frame(tmp_path / name, rng)
+        else:
+            write_blurred_frame(tmp_path / name, rng)
+        entries.append(DetectionEntry(name, i, 1, [3], [[[0, 0], [1, 0], [1, 1], [0, 1]]]))
+    return make_detections(entries)
+
+
+def test_sharpness_score_higher_for_sharp_frame(tmp_path: Path) -> None:
+    rng = np.random.default_rng(0)
+    write_sharp_frame(tmp_path / "sharp.jpg", rng)
+    write_blurred_frame(tmp_path / "blurred.jpg", rng)
+
+    sharp = sharpness_score(tmp_path / "sharp.jpg")
+    blurred = sharpness_score(tmp_path / "blurred.jpg")
+
+    assert sharp is not None and blurred is not None
+    assert sharp > blurred
+
+
+def test_sharpness_score_none_for_unreadable_file(tmp_path: Path) -> None:
+    (tmp_path / "bogus.jpg").write_bytes(b"img")
+    assert sharpness_score(tmp_path / "bogus.jpg") is None
+
+
+def test_compute_blur_rejects_flags_blurred_outliers(tmp_path: Path) -> None:
+    detections = make_session(tmp_path, n_sharp=8, n_blurred=2)
+
+    rejects, stats = compute_blur_rejects(detections, tmp_path)
+
+    assert rejects == {"frame_0008.jpg", "frame_0009.jpg"}
+    assert stats["metric"] == "variance_of_laplacian"
+    assert stats["threshold"] is not None
+    assert stats["frames_rejected"] == 2
+
+
+def test_compute_blur_rejects_uniform_session_rejects_nothing(tmp_path: Path) -> None:
+    detections = make_session(tmp_path, n_sharp=6, n_blurred=0)
+
+    rejects, stats = compute_blur_rejects(detections, tmp_path)
+
+    assert rejects == set()
+    assert stats["frames_rejected"] == 0
+
+
+def test_compute_blur_rejects_skips_unscoreable_frames(tmp_path: Path) -> None:
+    (tmp_path / "frame_0000.jpg").write_bytes(b"img")
+    (tmp_path / "frame_0001.jpg").write_bytes(b"img")
+    detections = make_detections(
+        [
+            DetectionEntry("frame_0000.jpg", 0, 1, [3], []),
+            DetectionEntry("frame_0001.jpg", 1, 1, [3], []),
+        ]
+    )
+
+    rejects, stats = compute_blur_rejects(detections, tmp_path)
+
+    assert rejects == set()
+    assert stats["frames_scored"] == 0
+
+
+def test_filter_frames_excludes_blur_rejects(tmp_path: Path) -> None:
+    detections = make_session(tmp_path, n_sharp=8, n_blurred=2)
+    rejects, _ = compute_blur_rejects(detections, tmp_path)
+
+    result = filter_frames(
+        detections, tmp_path, min_markers=1, blur_rejects=rejects
+    )
+
+    kept = {e.filename for e in result}
+    assert "frame_0008.jpg" not in kept
+    assert "frame_0009.jpg" not in kept
+    assert len(kept) == 8
+    assert not (tmp_path / "filtered" / "frame_0008.jpg").exists()
+
+
+def test_save_manifest_records_sharpness_stats(tmp_path: Path) -> None:
+    detections = make_session(tmp_path, n_sharp=8, n_blurred=2)
+    rejects, stats = compute_blur_rejects(detections, tmp_path)
+    filtered = filter_frames(
+        detections, tmp_path, min_markers=1, blur_rejects=rejects
+    )
+
+    save_manifest(filtered, detections, tmp_path, min_markers=1, sharpness=stats)
+
+    output = json.loads((tmp_path / "manifest.json").read_text())
+    assert output["sharpness"]["metric"] == "variance_of_laplacian"
+    assert output["sharpness"]["frames_rejected"] == 2
+    assert output["sharpness"]["threshold"] is not None
+
+
+# --- A2: tool versions in manifest ---
+
+
+def test_save_manifest_records_tool_versions(tmp_path: Path) -> None:
+    detections = make_detections([])
+
+    save_manifest([], detections, tmp_path, min_markers=1)
+
+    output = json.loads((tmp_path / "manifest.json").read_text())
+    versions = output["tool_versions"]
+    assert versions["python"]
+    assert versions["opencv"] == cv2.__version__
+    assert versions["numpy"] == np.__version__
+
+
+def test_filter_manifest_parses_old_schema_without_new_fields() -> None:
+    old = {
+        "dictionary": "DICT_4X4_250",
+        "min_markers": 1,
+        "total_frames_input": 1,
+        "frames_filtered_out": 0,
+        "frames": ["frame_0000.jpg"],
+        "marker_detections": {"frame_0000.jpg": []},
+    }
+    manifest = FilterManifest.from_dict(old)
+    assert manifest.sharpness is None
+    assert manifest.tool_versions is None
 
 
 # --- strip_invalid_ids ---
