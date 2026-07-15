@@ -43,6 +43,9 @@ class VideoMetadata:
     extracted_at: str
     opencv_version: str
     frames: list[FrameEntry]
+    # Optional: 35mm-equivalent focal length probed from the video container
+    # (None when metadata is absent, e.g. messaging-app transfers strip it).
+    focal_length_35mm: float | None = None
 
     @classmethod
     def from_dict(cls, data: dict, *, source: str = "metadata.json") -> VideoMetadata:
@@ -71,10 +74,11 @@ class VideoMetadata:
             extracted_at=data["extracted_at"],
             opencv_version=data["opencv_version"],
             frames=[FrameEntry.from_dict(f, source=source) for f in data["frames"]],
+            focal_length_35mm=data.get("focal_length_35mm"),
         )
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "source_video": self.source_video,
             "fps": self.fps,
             "total_frames": self.total_frames,
@@ -85,6 +89,10 @@ class VideoMetadata:
             "opencv_version": self.opencv_version,
             "frames": [f.to_dict() for f in self.frames],
         }
+        # Omitted when unset so old metadata files round-trip unchanged.
+        if self.focal_length_35mm is not None:
+            data["focal_length_35mm"] = self.focal_length_35mm
+        return data
 
 
 @dataclass
@@ -179,6 +187,7 @@ class FilterManifest:
     # Optional (added later): absent from manifests written by older versions.
     sharpness: dict | None = None
     tool_versions: dict | None = None
+    camera: dict | None = None
 
     @classmethod
     def from_dict(cls, data: dict, *, source: str = "manifest.json") -> FilterManifest:
@@ -206,6 +215,7 @@ class FilterManifest:
             },
             sharpness=data.get("sharpness"),
             tool_versions=data.get("tool_versions"),
+            camera=data.get("camera"),
         )
 
     def to_dict(self) -> dict:
@@ -225,6 +235,8 @@ class FilterManifest:
             data["sharpness"] = self.sharpness
         if self.tool_versions is not None:
             data["tool_versions"] = self.tool_versions
+        if self.camera is not None:
+            data["camera"] = self.camera
         return data
 
 
