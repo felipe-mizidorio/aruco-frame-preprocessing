@@ -179,6 +179,8 @@ class FilterManifest:
     # Optional (added later): absent from manifests written by older versions.
     sharpness: dict | None = None
     tool_versions: dict | None = None
+    mask_dir: str | None = None
+    mask_generation: dict | None = None
 
     @classmethod
     def from_dict(cls, data: dict, *, source: str = "manifest.json") -> FilterManifest:
@@ -206,6 +208,8 @@ class FilterManifest:
             },
             sharpness=data.get("sharpness"),
             tool_versions=data.get("tool_versions"),
+            mask_dir=data.get("mask_dir"),
+            mask_generation=data.get("mask_generation"),
         )
 
     def to_dict(self) -> dict:
@@ -225,6 +229,10 @@ class FilterManifest:
             data["sharpness"] = self.sharpness
         if self.tool_versions is not None:
             data["tool_versions"] = self.tool_versions
+        if self.mask_dir is not None:
+            data["mask_dir"] = self.mask_dir
+        if self.mask_generation is not None:
+            data["mask_generation"] = self.mask_generation
         return data
 
 
