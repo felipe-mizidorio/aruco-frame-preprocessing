@@ -188,6 +188,8 @@ class FilterManifest:
     sharpness: dict | None = None
     tool_versions: dict | None = None
     camera: dict | None = None
+    mask_dir: str | None = None
+    mask_generation: dict | None = None
 
     @classmethod
     def from_dict(cls, data: dict, *, source: str = "manifest.json") -> FilterManifest:
@@ -216,6 +218,8 @@ class FilterManifest:
             sharpness=data.get("sharpness"),
             tool_versions=data.get("tool_versions"),
             camera=data.get("camera"),
+            mask_dir=data.get("mask_dir"),
+            mask_generation=data.get("mask_generation"),
         )
 
     def to_dict(self) -> dict:
@@ -237,6 +241,10 @@ class FilterManifest:
             data["tool_versions"] = self.tool_versions
         if self.camera is not None:
             data["camera"] = self.camera
+        if self.mask_dir is not None:
+            data["mask_dir"] = self.mask_dir
+        if self.mask_generation is not None:
+            data["mask_generation"] = self.mask_generation
         return data
 
 
