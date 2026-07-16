@@ -1,5 +1,6 @@
 import argparse
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -11,6 +12,61 @@ from schemas import FrameEntry, VideoMetadata
 VALID_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 
 logger = logging.getLogger(__name__)
+
+# Container metadata lives in the moov/udta boxes near the start or end of the
+# file; scanning this many bytes from each end covers both layouts without
+# reading multi-GB videos whole.
+_PROBE_WINDOW_BYTES = 8 * 1024 * 1024
+# 35mm-equivalent focal lengths outside this range are treated as parse noise.
+_F35_PLAUSIBLE_MM = (10.0, 200.0)
+
+_XMP_F35_RE = re.compile(
+    rb"FocalLengthIn35mmFilm[^0-9]{0,4}(\d+)(?:/(\d+))?", re.IGNORECASE
+)
+_APPLE_F35_KEY = b"com.apple.quicktime.camera.focal_length.35mm_equivalent"
+_APPLE_F35_VALUE_RE = re.compile(rb"(\d+(?:\.\d+)?)")
+
+
+def probe_focal_35mm(video_path: Path) -> float | None:
+    """Best-effort 35mm-equivalent focal length from the video container.
+
+    Looks for XMP/EXIF `FocalLengthIn35mmFilm` and the Apple QuickTime
+    per-capture key. Returns None when metadata is absent — the common case
+    for domestic videos transferred through messaging apps, which strip it.
+    """
+    try:
+        size = video_path.stat().st_size
+        with video_path.open("rb") as f:
+            head = f.read(_PROBE_WINDOW_BYTES)
+            if size > 2 * _PROBE_WINDOW_BYTES:
+                f.seek(-_PROBE_WINDOW_BYTES, 2)
+                data = head + f.read(_PROBE_WINDOW_BYTES)
+            else:
+                data = head + f.read()
+    except OSError as exc:
+        logger.warning("Could not probe video metadata: %s", exc)
+        return None
+
+    candidates: list[float] = []
+    for m in _XMP_F35_RE.finditer(data):
+        numerator = float(m.group(1))
+        denominator = float(m.group(2)) if m.group(2) else 1.0
+        if denominator:
+            candidates.append(numerator / denominator)
+
+    key_pos = data.find(_APPLE_F35_KEY)
+    if key_pos != -1:
+        start = key_pos + len(_APPLE_F35_KEY)
+        value = _APPLE_F35_VALUE_RE.search(data[start : start + 64])
+        if value:
+            candidates.append(float(value.group(1)))
+
+    for f35 in candidates:
+        if _F35_PLAUSIBLE_MM[0] <= f35 <= _F35_PLAUSIBLE_MM[1]:
+            logger.info("Focal length (35mm equivalent) from container: %.1f mm", f35)
+            return f35
+    logger.info("No usable focal-length metadata in the video container.")
+    return None
 
 
 def parse_args() -> argparse.Namespace:
@@ -130,6 +186,7 @@ def save_metadata(
     stride: int,
     frames_metadata: list[FrameEntry],
     output_dir: Path,
+    focal_length_35mm: float | None = None,
 ) -> None:
     metadata = VideoMetadata(
         source_video=str(video_path.resolve()),
@@ -141,6 +198,7 @@ def save_metadata(
         extracted_at=datetime.now().isoformat(timespec="seconds"),
         opencv_version=cv2.__version__,
         frames=frames_metadata,
+        focal_length_35mm=focal_length_35mm,
     )
 
     metadata_path = output_dir / "metadata.json"
@@ -173,6 +231,7 @@ def main() -> None:
         stride=args.stride,
         frames_metadata=frames_metadata,
         output_dir=output_session_dir,
+        focal_length_35mm=probe_focal_35mm(args.input),
     )
 
 

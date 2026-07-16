@@ -9,7 +9,13 @@ import cv2
 import numpy as np
 
 import pipeline_io
-from schemas import DetectionEntry, DetectionsFile, FilterManifest, MarkerDetection
+from schemas import (
+    DetectionEntry,
+    DetectionsFile,
+    FilterManifest,
+    MarkerDetection,
+    VideoMetadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +101,26 @@ def tool_versions() -> dict:
         "python": platform.python_version(),
         "opencv": cv2.__version__,
         "numpy": np.__version__,
+    }
+
+
+def camera_block(session_dir: Path) -> dict | None:
+    """Camera metadata for the SfM side, from the session's metadata.json.
+
+    Carries the container-probed 35mm-equivalent focal length (may be null)
+    plus frame dimensions so the SfM pipeline can derive a focal prior in
+    pixels. Returns None when metadata.json is absent (old sessions).
+    """
+    metadata_path = session_dir / "metadata.json"
+    if not metadata_path.exists():
+        return None
+    metadata = VideoMetadata.from_dict(
+        pipeline_io.load_json(metadata_path, "metadata"), source=str(metadata_path)
+    )
+    return {
+        "focal_length_35mm": metadata.focal_length_35mm,
+        "width_px": metadata.resolution.get("width"),
+        "height_px": metadata.resolution.get("height"),
     }
 
 
@@ -217,6 +243,7 @@ def save_manifest(
         marker_detections=marker_detections,
         sharpness=sharpness,
         tool_versions=tool_versions(),
+        camera=camera_block(output_dir),
     )
 
     out_path = output_dir / "manifest.json"
