@@ -7,10 +7,12 @@ import numpy as np
 from sam_mask_generation import (
     MIN_MARGIN_PX,
     SAM_MARGIN_MARKER_SIDES,
+    dark_prompt_points,
     generate_sam_masks,
     postprocess_mask,
     prompt_points,
     sam_margin_px,
+    select_head_mask,
 )
 from schemas import FilterManifest, MarkerDetection
 
@@ -61,6 +63,78 @@ def test_margin_has_floor() -> None:
     assert sam_margin_px([square(100, 100, 2)]) == MIN_MARGIN_PX
 
 
+# --- dark_prompt_points ---
+
+
+def test_dark_prompts_keep_only_dark_pixels() -> None:
+    gray = np.full((240, 320), 200, dtype=np.uint8)  # bright everywhere...
+    gray[:, :160] = 30  # ...except the left half (dark head surface)
+    centroids = np.array([[100.0, 100.0], [140.0, 100.0], [250.0, 100.0]])
+
+    pts = dark_prompt_points(centroids, gray)
+
+    # Candidates: mean(163, 100) bright -> dropped; midpoints (120,100) dark,
+    # (120,100) dark (mutual nearest), (195,100) bright -> dropped.
+    assert len(pts) > 0
+    for x, y in pts:
+        assert gray[int(round(y)), int(round(x))] < 100
+
+
+def test_dark_prompts_exclude_marker_centroids_themselves() -> None:
+    gray = np.zeros((240, 240), dtype=np.uint8)
+    centroids = np.array([[60.0, 60.0], [180.0, 60.0]])
+
+    pts = dark_prompt_points(centroids, gray)
+
+    for c in centroids:
+        assert not any(np.allclose(p, c) for p in pts)
+
+
+def test_dark_prompts_empty_when_everything_bright() -> None:
+    gray = np.full((240, 240), 220, dtype=np.uint8)
+    centroids = np.array([[60.0, 60.0], [180.0, 60.0]])
+    assert len(dark_prompt_points(centroids, gray)) == 0
+
+
+# --- select_head_mask ---
+
+
+def _head_scene(w: int = 320, h: int = 240):
+    """Dark head blob carrying two bright 'markers' on a bright background."""
+    gray = np.full((h, w), 220, dtype=np.uint8)  # bright desk/wall
+    cv2.circle(gray, (160, 120), 70, 40, -1)  # dark head
+    centroids = np.array([[140.0, 100.0], [180.0, 100.0]])
+    for x, y in centroids:
+        cv2.rectangle(gray, (int(x) - 8, int(y) - 8), (int(x) + 8, int(y) + 8), 255, -1)
+    head = np.zeros((h, w), dtype=np.uint8)
+    cv2.circle(head, (160, 120), 70, 1, -1)
+    marker = np.zeros((h, w), dtype=np.uint8)
+    cv2.rectangle(marker, (132, 92), (148, 108), 1, -1)  # one marker patch only
+    scene = np.ones((h, w), dtype=np.uint8)  # everything
+    return gray, centroids, head, marker, scene
+
+
+def test_selects_head_from_hierarchy() -> None:
+    gray, centroids, head, marker, scene = _head_scene()
+
+    picked = select_head_mask(
+        np.stack([marker, head, scene]), centroids, gray, median_side=16.0
+    )
+
+    assert picked is not None
+    np.testing.assert_array_equal(picked, head.astype(bool))
+
+
+def test_rejects_all_when_only_marker_patch_qualifies_containment() -> None:
+    gray, centroids, head, marker, scene = _head_scene()
+    # Marker patch: fails containment (covers 1 of 2 centroids).
+    # Scene: fails the bright-fraction test. No head candidate offered.
+    picked = select_head_mask(
+        np.stack([marker, scene]), centroids, gray, median_side=16.0
+    )
+    assert picked is None
+
+
 # --- postprocess_mask ---
 
 
@@ -104,13 +178,13 @@ def test_no_component_contains_prompt_returns_none() -> None:
 # --- generate_sam_masks (session driver, mocked segmentation) ---
 
 
-def fake_segment_head(model, img, prompts):
+def fake_segment_head(model, img, prompts, centroids, median_side):
     mask = np.zeros(img.shape[:2], dtype=np.uint8)
     cv2.circle(mask, (160, 120), 80, 255, -1)
     return mask
 
 
-def fake_segment_fail(model, img, prompts):
+def fake_segment_fail(model, img, prompts, centroids, median_side):
     return None
 
 
@@ -167,7 +241,7 @@ def test_segmentation_failure_falls_back_to_full_white(tmp_path: Path) -> None:
 
 
 def test_tiny_mask_treated_as_failure(tmp_path: Path) -> None:
-    def tiny_segment(model, img, prompts):
+    def tiny_segment(model, img, prompts, centroids, median_side):
         mask = np.zeros(img.shape[:2], dtype=np.uint8)
         cv2.circle(mask, (160, 120), 3, 255, -1)  # far below MIN_AREA_FRACTION
         return mask
