@@ -1,4 +1,4 @@
-"""Stage 3c: MobileSAM head-silhouette masks (Arm 2 of the masking comparison).
+"""Stage 3c: MobileSAM head-silhouette masks (Arms 2 and 3 of the masking comparison).
 
 The ArUco-hull masks (mask_generation.py) protect only the marker-covered
 crown; occlusion-boundary background bleeding happens in the marker-free
@@ -34,10 +34,20 @@ Reproducibility: the manifest records the weights file SHA-256, ultralytics /
 torch versions, and the inference device. Inference runs on CPU by default;
 MobileSAM inference with fixed weights on CPU is deterministic.
 
+Anchored mode (--anchor-hull, Arm 3): the final mask is the UNION of the
+dilated MobileSAM silhouette and the dilated ArUco-hull mask
+(mask_generation.generate_mask). Resolution rule when they disagree: the hull
+wins — the hull region is a protected core that segmentation can never remove
+(it is *certainly* head, being spanned by the physical markers), so MobileSAM
+can only ADD coverage (cheek/forehead/base), never erode it. Degradation:
+SAM∪hull -> SAM alone (hull needs >=3 markers) -> hull alone (SAM failed) ->
+full-white (both failed).
+
 Outputs are written next to the existing masks without touching them:
-masks -> `filtered/masks_sam/`, manifest -> `manifest_sam.json` (a copy of the
-input manifest with mask_dir/mask_generation replaced), so the frozen Arm 1
-artifacts stay intact.
+masks -> `filtered/masks_sam/` (blind) or `filtered/masks_sam_hull/`
+(anchored), manifest -> `manifest_sam.json` / `manifest_sam_hull.json` (a copy
+of the input manifest with mask_dir/mask_generation replaced), so the frozen
+Arm 1 artifacts stay intact.
 """
 
 import argparse
@@ -49,6 +59,7 @@ import cv2
 import numpy as np
 
 import pipeline_io
+from mask_generation import generate_mask as generate_hull_mask
 from schemas import FilterManifest
 
 logger = logging.getLogger(__name__)
@@ -65,6 +76,7 @@ MIN_MARGIN_PX = 5
 MIN_AREA_FRACTION = 0.02
 
 MASK_DIR_NAME = "masks_sam"
+MASK_DIR_NAME_ANCHORED = "masks_sam_hull"
 DEFAULT_WEIGHTS = "mobile_sam.pt"
 
 # Prompt points must land on the head surface: pixels at least this dark.
@@ -320,14 +332,17 @@ def generate_sam_masks(
     manifest_out: Path | None = None,
     weights_provenance: dict | None = None,
     segment=segment_frame,
+    anchor_hull: bool = False,
 ) -> dict:
     """Write SAM head masks for every manifest frame; write an updated manifest copy."""
     filtered_dir = session_dir / "filtered"
-    masks_dir = filtered_dir / MASK_DIR_NAME
+    mask_dir_name = MASK_DIR_NAME_ANCHORED if anchor_hull else MASK_DIR_NAME
+    masks_dir = filtered_dir / mask_dir_name
     masks_dir.mkdir(parents=True, exist_ok=True)
 
     frames_masked = 0
     frames_fallback = 0
+    frames_hull_only = 0
     total = len(manifest.frames)
 
     for i, filename in enumerate(manifest.frames):
@@ -341,42 +356,52 @@ def generate_sam_masks(
         height, width = img.shape[:2]
 
         detections = manifest.marker_detections.get(filename, [])
-        mask = None
+        sam_mask = None
+        corners = [d.corners for d in detections]
         if detections:
-            corners = [d.corners for d in detections]
             centroids = prompt_points(corners)
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             prompts = dark_prompt_points(centroids, gray)
             if len(prompts) == 0:
-                logger.warning(
-                    "No dark on-head prompt on %s — using full-white fallback.",
-                    filename,
-                )
+                logger.warning("No dark on-head prompt on %s.", filename)
             else:
                 raw = segment(
                     model, img, prompts, centroids, median_marker_side(corners)
                 )
                 if raw is not None:
-                    mask = postprocess_mask(raw, prompts, sam_margin_px(corners))
+                    sam_mask = postprocess_mask(raw, prompts, sam_margin_px(corners))
                 min_area = MIN_AREA_FRACTION * height * width
-                if mask is not None and mask.sum() / 255 < min_area:
-                    logger.warning(
-                        "SAM mask implausibly small on %s — using full-white fallback.",
-                        filename,
-                    )
-                    mask = None
+                if sam_mask is not None and sam_mask.sum() / 255 < min_area:
+                    logger.warning("SAM mask implausibly small on %s.", filename)
+                    sam_mask = None
 
-        if mask is None:
+        # Anchored mode: the hull is a protected core the segmentation can
+        # never remove — union it in (hull wins wherever SAM disagrees).
+        hull_mask = None
+        if anchor_hull and detections:
+            hull_mask = generate_hull_mask(corners, width, height)
+
+        if sam_mask is not None and hull_mask is not None:
+            mask = cv2.bitwise_or(sam_mask, hull_mask)
+            frames_masked += 1
+        elif sam_mask is not None:
+            mask = sam_mask
+            frames_masked += 1
+        elif hull_mask is not None:
+            mask = hull_mask
+            frames_hull_only += 1
+            logger.warning("SAM failed on %s — hull-only mask.", filename)
+        else:
             mask = np.full((height, width), 255, dtype=np.uint8)
             frames_fallback += 1
-        else:
-            frames_masked += 1
+            logger.warning("No usable mask on %s — full-white fallback.", filename)
 
         cv2.imwrite(str(masks_dir / f"{filename}.png"), mask)
 
     stats = {
-        "method": "mobilesam",
+        "method": "mobilesam_hull_anchored" if anchor_hull else "mobilesam",
         "frames_masked": frames_masked,
+        "frames_hull_only": frames_hull_only,
         "frames_fallback_full": frames_fallback,
         "margin_marker_sides": SAM_MARGIN_MARKER_SIDES,
         "min_margin_px": MIN_MARGIN_PX,
@@ -396,7 +421,7 @@ def generate_sam_masks(
     )
 
     if manifest_out is not None:
-        manifest.mask_dir = MASK_DIR_NAME
+        manifest.mask_dir = mask_dir_name
         manifest.mask_generation = stats
         pipeline_io.save_json(manifest.to_dict(), manifest_out)
         logger.info("Manifest with SAM masks written: '%s'", manifest_out)
@@ -436,6 +461,14 @@ def parse_args() -> argparse.Namespace:
         default="cpu",
         help="Inference device (cpu is deterministic; cuda if available).",
     )
+    parser.add_argument(
+        "--anchor-hull",
+        action="store_true",
+        help=(
+            "Arm 3: union the SAM silhouette with the dilated ArUco-hull mask "
+            "(the hull is a protected core segmentation can never remove)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -447,7 +480,8 @@ def main() -> None:
         pipeline_io.load_json(args.manifest, "manifest"), source=str(args.manifest)
     )
     session_dir = pipeline_io.session_dir(args.manifest)
-    manifest_out = args.manifest_out or args.manifest.parent / "manifest_sam.json"
+    default_name = "manifest_sam_hull.json" if args.anchor_hull else "manifest_sam.json"
+    manifest_out = args.manifest_out or args.manifest.parent / default_name
 
     model, weights_file = load_sam_model(args.weights, args.device)
     generate_sam_masks(
@@ -456,6 +490,7 @@ def main() -> None:
         model,
         manifest_out=manifest_out,
         weights_provenance=_weights_provenance(weights_file, args.device),
+        anchor_hull=args.anchor_hull,
     )
 
 

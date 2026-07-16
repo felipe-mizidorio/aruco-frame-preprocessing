@@ -240,6 +240,130 @@ def test_segmentation_failure_falls_back_to_full_white(tmp_path: Path) -> None:
     assert stats["frames_fallback_full"] == 1
 
 
+# --- anchored mode (Arm 3) ---
+
+
+def test_anchored_mask_is_union_and_hull_wins(tmp_path: Path) -> None:
+    # SAM mask deliberately EXCLUDES one marker (the historical failure);
+    # the anchored mask must still keep that marker's hull region.
+    def sam_missing_a_marker(model, img, prompts, centroids, median_side):
+        mask = np.zeros(img.shape[:2], dtype=np.uint8)
+        cv2.circle(mask, (120, 120), 60, 255, -1)  # covers markers at ~(100..150)
+        return mask  # does NOT cover the marker at (250, 180)
+
+    filtered = tmp_path / "filtered"
+    filtered.mkdir()
+    write_frame(filtered / "frame_0000.jpg")
+    manifest = make_manifest(
+        {
+            "frame_0000.jpg": [
+                square(100, 100, 20),
+                square(150, 120, 20),
+                square(250, 180, 20),  # hull must protect this one
+            ]
+        }
+    )
+    manifest_out = tmp_path / "manifest_sam_hull.json"
+
+    stats = generate_sam_masks(
+        manifest,
+        tmp_path,
+        model=None,
+        manifest_out=manifest_out,
+        segment=sam_missing_a_marker,
+        anchor_hull=True,
+    )
+
+    mask = cv2.imread(
+        str(filtered / "masks_sam_hull" / "frame_0000.jpg.png"), cv2.IMREAD_GRAYSCALE
+    )
+    assert mask is not None
+    assert mask[120, 120] == 255  # SAM region kept
+    assert mask[180, 250] == 255  # hull wins where SAM disagreed
+    assert mask[5, 315] == 0  # background still dropped
+    assert stats["method"] == "mobilesam_hull_anchored"
+    assert stats["frames_masked"] == 1
+
+    data = json.loads(manifest_out.read_text())
+    assert data["mask_dir"] == "masks_sam_hull"
+
+
+def test_anchored_mask_never_smaller_than_hull(tmp_path: Path) -> None:
+    from mask_generation import generate_mask as generate_hull_mask
+
+    def tiny_sam(model, img, prompts, centroids, median_side):
+        mask = np.zeros(img.shape[:2], dtype=np.uint8)
+        cv2.circle(mask, (100, 100), 40, 255, -1)
+        return mask
+
+    corners = [square(100, 100, 20), square(200, 100, 20), square(150, 180, 20)]
+    filtered = tmp_path / "filtered"
+    filtered.mkdir()
+    write_frame(filtered / "frame_0000.jpg")
+    manifest = make_manifest({"frame_0000.jpg": corners})
+
+    generate_sam_masks(
+        manifest, tmp_path, model=None, segment=tiny_sam, anchor_hull=True
+    )
+
+    mask = cv2.imread(
+        str(filtered / "masks_sam_hull" / "frame_0000.jpg.png"), cv2.IMREAD_GRAYSCALE
+    )
+    hull = generate_hull_mask(corners, width=320, height=240)
+    assert mask is not None and hull is not None
+    # ultralytics (imported by other test modules) patches cv2.imread to
+    # return (H, W, 1) for grayscale — normalize before array comparison.
+    mask2d = mask[..., 0] if mask.ndim == 3 else mask
+    assert ((hull > 0) & (mask2d == 0)).sum() == 0  # no hull pixel lost
+
+
+def test_anchored_falls_back_to_hull_when_sam_fails(tmp_path: Path) -> None:
+    filtered = tmp_path / "filtered"
+    filtered.mkdir()
+    write_frame(filtered / "frame_0000.jpg")
+    manifest = make_manifest(
+        {
+            "frame_0000.jpg": [
+                square(100, 100, 20),
+                square(200, 100, 20),
+                square(150, 180, 20),
+            ]
+        }
+    )
+
+    stats = generate_sam_masks(
+        manifest, tmp_path, model=None, segment=fake_segment_fail, anchor_hull=True
+    )
+
+    mask = cv2.imread(
+        str(filtered / "masks_sam_hull" / "frame_0000.jpg.png"), cv2.IMREAD_GRAYSCALE
+    )
+    assert mask is not None
+    assert mask[130, 150] == 255  # hull interior kept
+    assert mask[5, 5] == 0  # hull-only mask, not full-white
+    assert stats["frames_hull_only"] == 1
+    assert stats["frames_fallback_full"] == 0
+
+
+def test_anchored_full_white_when_sam_and_hull_both_fail(tmp_path: Path) -> None:
+    filtered = tmp_path / "filtered"
+    filtered.mkdir()
+    write_frame(filtered / "frame_0000.jpg")
+    # Only one marker: hull needs >=3, and SAM fails -> full-white.
+    manifest = make_manifest({"frame_0000.jpg": [square(160, 120, 20)]})
+
+    stats = generate_sam_masks(
+        manifest, tmp_path, model=None, segment=fake_segment_fail, anchor_hull=True
+    )
+
+    mask = cv2.imread(
+        str(filtered / "masks_sam_hull" / "frame_0000.jpg.png"), cv2.IMREAD_GRAYSCALE
+    )
+    assert mask is not None
+    assert mask.min() == 255
+    assert stats["frames_fallback_full"] == 1
+
+
 def test_tiny_mask_treated_as_failure(tmp_path: Path) -> None:
     def tiny_segment(model, img, prompts, centroids, median_side):
         mask = np.zeros(img.shape[:2], dtype=np.uint8)
