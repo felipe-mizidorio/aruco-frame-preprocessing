@@ -23,6 +23,9 @@ deeparuco = [
     "tensorflow>=2.15.0,<3.0.0",
     "ultralytics>=8.0.0,<9.0.0",
 ]
+sam = [
+    "ultralytics>=8.0.0,<9.0.0",
+]
 
 [dependency-groups]
 dev = [

@@ -99,7 +99,9 @@ def generate_masks(
         if img is None:
             logger.warning("Frame unreadable, skipping mask: %s", frame_path)
             continue
-        height, width = img.shape
+        # shape[:2]: ultralytics (when installed) patches cv2.imread globally
+        # and returns (H, W, 1) for grayscale reads.
+        height, width = img.shape[:2]
 
         detections = manifest.marker_detections.get(filename, [])
         mask = generate_mask([d.corners for d in detections], width, height)
