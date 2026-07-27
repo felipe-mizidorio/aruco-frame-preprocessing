@@ -64,7 +64,7 @@ uv run aruco-detect --metadata <session-dir>/metadata.json
 uv run aruco-filter --detections <session-dir>/detections.json
 
 # 4. Generate foreground masks (for COLMAP) from the filtered frames
-uv run aruco-mask --manifest <session-dir>/filtered/manifest.json
+uv run aruco-mask --manifest <session-dir>/manifest.json
 
 # 5. Compare OpenCV detections against DeepArUco++ model outputs
 uv run aruco-compare --detections <session-dir>/detections.json
@@ -73,7 +73,7 @@ uv run aruco-compare --detections <session-dir>/detections.json
 uv run aruco-generate-markers
 ```
 
-Outputs 10 markers (200x200 px, `DICT_4X4_250`) to `data/raw/` by default.
+Outputs to `data/markers` by default. Marker shape/count come from `configs/pipeline.yaml`'s `markers:` block (currently 20 markers, `DICT_4X4_50`, 236px coded side + 59px white margin per side, 300 DPI) unless overridden via CLI flags (`--num-markers`, `--side-pixels`, `--margin-pixels`, `--dictionary`, `--dpi`, `--output-dir`).
 
 ### Configuration
 
