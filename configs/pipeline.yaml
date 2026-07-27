@@ -1,0 +1,27 @@
+# Session defaults for the aruco pipeline. CLI flags override these;
+# these override the hardcoded fallbacks in aruco_pipeline/config.py.
+# Algorithm constants (blur/hull thresholds) live in code, not here.
+dictionary: DICT_4X4_250          # default ArUco dictionary for detection
+
+frame_extraction:
+  stride: 1
+
+frame_filtering:
+  min_markers: 1
+  valid_ids: null
+
+markers:
+  num_markers: 20
+  side_pixels: 236
+  margin_pixels: 59
+  dictionary: DICT_4X4_50
+  dpi: 300
+  page_format: A4
+
+deeparuco:
+  base_url: "https://raw.githubusercontent.com/AVAuco/deeparuco/master/models"
+  weights_dir: "~/.cache/deeparuco"
+  weights:
+    detector: det_luma_bc_s.pt
+    regressor: reg_hmap_8.h5
+    decoder: dec_new.h5
