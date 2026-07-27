@@ -1,6 +1,8 @@
+import sys
 from pathlib import Path
 
 from aruco_pipeline.config import PipelineConfig, load_config
+from aruco_pipeline.stages import aruco_detection, frame_extraction
 
 
 def test_load_full_yaml(tmp_path: Path):
@@ -38,3 +40,24 @@ def test_missing_section_returns_defaults(tmp_path: Path):
     assert cfg.dictionary == "DICT_6X6_50"
     assert cfg.frame_extraction.stride == 1
     assert cfg.frame_filtering.valid_ids is None
+
+
+def test_aruco_detection_dictionary_flag_beats_config(monkeypatch):
+    argv = ["aruco-detect", "--metadata", "m.json", "--dictionary", "DICT_5X5_50"]
+    monkeypatch.setattr(sys, "argv", argv)
+    args = aruco_detection.parse_args()
+    assert args.dictionary == "DICT_5X5_50"
+
+
+def test_aruco_detection_dictionary_defaults_to_none(monkeypatch):
+    argv = ["aruco-detect", "--metadata", "m.json"]
+    monkeypatch.setattr(sys, "argv", argv)
+    args = aruco_detection.parse_args()
+    assert args.dictionary is None  # main() fills from config
+
+
+def test_frame_extraction_stride_defaults_to_none(monkeypatch):
+    argv = ["aruco-extract", "--input", "v.mp4"]
+    monkeypatch.setattr(sys, "argv", argv)
+    args = frame_extraction.parse_args()
+    assert args.stride is None

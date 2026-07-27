@@ -6,6 +6,7 @@ from pathlib import Path
 
 import cv2
 
+from ..config import load_config
 from ..core import pipeline_io
 from ..core.schemas import FrameEntry, VideoMetadata
 
@@ -83,7 +84,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--stride",
         type=int,
-        default=1,
+        default=None,
         help="Extract one frame every N frames.",
     )
     parser.add_argument(
@@ -218,8 +219,11 @@ def main() -> None:
         / f"{args.input.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     )
 
+    cfg = load_config()
+    stride = args.stride if args.stride is not None else cfg.frame_extraction.stride
+
     frames_metadata, fps, total_frames, frame_width, frame_height = extract_frames(
-        args.input, args.stride, output_session_dir
+        args.input, stride, output_session_dir
     )
 
     save_metadata(
@@ -228,7 +232,7 @@ def main() -> None:
         total_frames=total_frames,
         frame_width=frame_width,
         frame_height=frame_height,
-        stride=args.stride,
+        stride=stride,
         frames_metadata=frames_metadata,
         output_dir=output_session_dir,
         focal_length_35mm=probe_focal_35mm(args.input),
