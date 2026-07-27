@@ -4,8 +4,8 @@ from pathlib import Path
 
 import cv2
 
-import pipeline_io
-from schemas import DetectionEntry, DetectionsFile, VideoMetadata
+from ..core import pipeline_io
+from ..core.schemas import DetectionEntry, DetectionsFile, VideoMetadata
 
 logger = logging.getLogger(__name__)
 

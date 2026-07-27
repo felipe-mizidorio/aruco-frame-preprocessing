@@ -6,8 +6,8 @@ from pathlib import Path
 
 import cv2
 
-import pipeline_io
-from schemas import FrameEntry, VideoMetadata
+from ..core import pipeline_io
+from ..core.schemas import FrameEntry, VideoMetadata
 
 VALID_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 

@@ -7,8 +7,8 @@ import cv2
 from cv2.typing import MatLike
 from fpdf import FPDF
 
-import pipeline_io
-from schemas import MarkerSheetManifest
+from ..core import pipeline_io
+from ..core.schemas import MarkerSheetManifest
 
 logger = logging.getLogger(__name__)
 

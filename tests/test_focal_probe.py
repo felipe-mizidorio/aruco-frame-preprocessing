@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-from frame_extraction import probe_focal_35mm
-from frame_filtering import save_manifest
-from schemas import DetectionsFile, VideoMetadata
+from aruco_pipeline.core.schemas import DetectionsFile, VideoMetadata
+from aruco_pipeline.stages.frame_extraction import probe_focal_35mm
+from aruco_pipeline.stages.frame_filtering import save_manifest
 
 # --- probe_focal_35mm ---
 

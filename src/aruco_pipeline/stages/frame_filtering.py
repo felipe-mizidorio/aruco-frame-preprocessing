@@ -8,8 +8,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-import pipeline_io
-from schemas import (
+from ..core import pipeline_io
+from ..core.schemas import (
     DetectionEntry,
     DetectionsFile,
     FilterManifest,
@@ -67,9 +67,7 @@ def compute_blur_rejects(
     }
 
     if len(scores) < _MIN_FRAMES_FOR_BLUR_STATS:
-        logger.info(
-            "Blur filtering skipped: only %d scoreable frame(s).", len(scores)
-        )
+        logger.info("Blur filtering skipped: only %d scoreable frame(s).", len(scores))
         return set(), stats
 
     values = np.array(list(scores.values()))
@@ -85,8 +83,7 @@ def compute_blur_rejects(
         frames_rejected=len(rejects),
     )
     logger.info(
-        "Blur filtering: %d / %d frames below threshold %.1f "
-        "(median=%.1f, MAD=%.1f).",
+        "Blur filtering: %d / %d frames below threshold %.1f (median=%.1f, MAD=%.1f).",
         len(rejects),
         len(scores),
         threshold,

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pipeline_io import (
+from aruco_pipeline.core.pipeline_io import (
     ARUCO_DICTIONARIES,
     configure_logging,
     load_json,
@@ -40,7 +40,7 @@ def test_save_json_writes_file(tmp_path: Path) -> None:
 
 
 def test_log_progress_logs_at_interval(caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.INFO, logger="pipeline_io"):
+    with caplog.at_level(logging.INFO, logger="aruco_pipeline.core.pipeline_io"):
         log_progress(0, 100)
         log_progress(1, 100)
         log_progress(50, 100)
@@ -48,7 +48,7 @@ def test_log_progress_logs_at_interval(caplog: pytest.LogCaptureFixture) -> None
 
 
 def test_log_progress_respects_custom_every(caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.INFO, logger="pipeline_io"):
+    with caplog.at_level(logging.INFO, logger="aruco_pipeline.core.pipeline_io"):
         log_progress(0, 10, every=5)
         log_progress(3, 10, every=5)
         log_progress(5, 10, every=5)

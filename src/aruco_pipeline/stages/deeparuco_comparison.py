@@ -8,12 +8,12 @@ from typing import Any
 import cv2
 import numpy as np
 
-import pipeline_io
-from deeparuco_vendor.aruco import find_id
-from deeparuco_vendor.heatmaps import pos_from_heatmap
-from deeparuco_vendor.losses import weighted_loss
-from deeparuco_vendor.utils import marker_from_corners, ordered_corners
-from schemas import ComparisonFile, DetectionsFile
+from ..core import pipeline_io
+from ..core.schemas import ComparisonFile, DetectionsFile
+from ..deeparuco_vendor.aruco import find_id
+from ..deeparuco_vendor.heatmaps import pos_from_heatmap
+from ..deeparuco_vendor.losses import weighted_loss
+from ..deeparuco_vendor.utils import marker_from_corners, ordered_corners
 
 logger = logging.getLogger(__name__)
 

@@ -5,8 +5,12 @@ import cv2
 import numpy as np
 import pytest
 
-from frame_extraction import extract_frames, save_metadata, validate_input
-from schemas import FrameEntry
+from aruco_pipeline.core.schemas import FrameEntry
+from aruco_pipeline.stages.frame_extraction import (
+    extract_frames,
+    save_metadata,
+    validate_input,
+)
 
 
 def make_test_video(
