@@ -4,14 +4,14 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from frame_filtering import (
+from aruco_pipeline.core.schemas import DetectionEntry, DetectionsFile, FilterManifest
+from aruco_pipeline.stages.frame_filtering import (
     compute_blur_rejects,
     filter_frames,
     save_manifest,
     sharpness_score,
     strip_invalid_ids,
 )
-from schemas import DetectionEntry, DetectionsFile, FilterManifest
 
 
 def make_detections(entries: list[DetectionEntry]) -> DetectionsFile:

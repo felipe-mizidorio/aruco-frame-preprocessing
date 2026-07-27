@@ -8,8 +8,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-import pipeline_io
-from schemas import (
+from ..config import load_config
+from ..core import pipeline_io
+from ..core.schemas import (
     DetectionEntry,
     DetectionsFile,
     FilterManifest,
@@ -67,9 +68,7 @@ def compute_blur_rejects(
     }
 
     if len(scores) < _MIN_FRAMES_FOR_BLUR_STATS:
-        logger.info(
-            "Blur filtering skipped: only %d scoreable frame(s).", len(scores)
-        )
+        logger.info("Blur filtering skipped: only %d scoreable frame(s).", len(scores))
         return set(), stats
 
     values = np.array(list(scores.values()))
@@ -85,8 +84,7 @@ def compute_blur_rejects(
         frames_rejected=len(rejects),
     )
     logger.info(
-        "Blur filtering: %d / %d frames below threshold %.1f "
-        "(median=%.1f, MAD=%.1f).",
+        "Blur filtering: %d / %d frames below threshold %.1f (median=%.1f, MAD=%.1f).",
         len(rejects),
         len(scores),
         threshold,
@@ -155,7 +153,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-markers",
         type=int,
-        default=1,
+        default=None,
         help="Keep only frames with at least this many markers detected.",
     )
     parser.add_argument(
@@ -267,17 +265,26 @@ def main() -> None:
     )
     frames_dir = pipeline_io.session_dir(args.detections)
 
-    valid_ids = set(args.valid_ids) if args.valid_ids is not None else None
+    cfg = load_config()
+    filtering_cfg = cfg.frame_filtering
+    min_markers = (
+        args.min_markers if args.min_markers is not None else filtering_cfg.min_markers
+    )
+    valid_ids_list = (
+        args.valid_ids if args.valid_ids is not None else filtering_cfg.valid_ids
+    )
+    valid_ids = set(valid_ids_list) if valid_ids_list is not None else None
+
     blur_rejects, sharpness_stats = compute_blur_rejects(detections, frames_dir)
     filtered = filter_frames(
         detections,
         frames_dir,
-        args.min_markers,
+        min_markers,
         valid_ids=valid_ids,
         blur_rejects=blur_rejects,
     )
     save_manifest(
-        filtered, detections, frames_dir, args.min_markers, sharpness=sharpness_stats
+        filtered, detections, frames_dir, min_markers, sharpness=sharpness_stats
     )
 
 

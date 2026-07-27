@@ -4,13 +4,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from mask_generation import (
+from aruco_pipeline.core.schemas import FilterManifest, MarkerDetection
+from aruco_pipeline.stages.mask_generation import (
     HULL_MARGIN_MARKER_SIDES,
     MIN_MARKERS_FOR_HULL,
     generate_mask,
     generate_masks,
 )
-from schemas import FilterManifest, MarkerDetection
 
 
 def square(cx: float, cy: float, side: float) -> list:

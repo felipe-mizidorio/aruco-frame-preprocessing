@@ -1,6 +1,6 @@
 import pytest
 
-from schemas import (
+from aruco_pipeline.core.schemas import (
     ComparisonFile,
     DetectionEntry,
     DetectionsFile,

@@ -16,6 +16,7 @@ dependencies = [
     "scipy>=1.13.0,<2.0.0",
     "shapely>=2.0.0,<3.0.0",
     "fpdf2>=2.8.7",
+    "pyyaml>=6.0,<7.0",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +24,21 @@ deeparuco = [
     "tensorflow>=2.15.0,<3.0.0",
     "ultralytics>=8.0.0,<9.0.0",
 ]
+
+[project.scripts]
+aruco-extract = "aruco_pipeline.stages.frame_extraction:main"
+aruco-detect = "aruco_pipeline.stages.aruco_detection:main"
+aruco-filter = "aruco_pipeline.stages.frame_filtering:main"
+aruco-mask = "aruco_pipeline.stages.mask_generation:main"
+aruco-compare = "aruco_pipeline.stages.deeparuco_comparison:main"
+aruco-generate-markers = "aruco_pipeline.markers.generate_markers:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aruco_pipeline"]
 
 [dependency-groups]
 dev = [
@@ -34,21 +50,21 @@ dev = [
 
 [tool.ruff]
 target-version = "py312"
-exclude = ["src/deeparuco_vendor"]
+exclude = ["src/aruco_pipeline/deeparuco_vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
-"src/deeparuco_vendor/*" = ["E", "F", "I"]
+"src/aruco_pipeline/deeparuco_vendor/*" = ["E", "F", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.pyright]
-include = ["src"]
+include = ["src/aruco_pipeline"]
 exclude = ["**/node_modules", "**/__pycache__", "**/.*", ".venv"]
 pythonVersion = "3.12"
 pythonPlatform = "Linux"

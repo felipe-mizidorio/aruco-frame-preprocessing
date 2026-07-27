@@ -4,8 +4,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from aruco_detection import detect_markers, save_detections
-from schemas import DetectionEntry, FrameEntry, VideoMetadata
+from aruco_pipeline.core.schemas import DetectionEntry, FrameEntry, VideoMetadata
+from aruco_pipeline.stages.aruco_detection import detect_markers, save_detections
 
 
 def make_metadata(tmp_path: Path, frames: list[FrameEntry]) -> VideoMetadata:

@@ -4,8 +4,9 @@ from pathlib import Path
 
 import cv2
 
-import pipeline_io
-from schemas import DetectionEntry, DetectionsFile, VideoMetadata
+from ..config import load_config
+from ..core import pipeline_io
+from ..core.schemas import DetectionEntry, DetectionsFile, VideoMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dictionary",
         type=str,
-        default="DICT_4X4_250",
+        default=None,
         choices=sorted(pipeline_io.ARUCO_DICTIONARIES.keys()),
         help="ArUco dictionary to use for detection.",
     )
@@ -125,8 +126,11 @@ def main() -> None:
     )
     frames_dir = pipeline_io.session_dir(args.metadata)
 
-    detections = detect_markers(metadata, frames_dir, args.dictionary)
-    save_detections(detections, metadata, frames_dir, args.dictionary)
+    cfg = load_config()
+    dictionary = args.dictionary if args.dictionary is not None else cfg.dictionary
+
+    detections = detect_markers(metadata, frames_dir, dictionary)
+    save_detections(detections, metadata, frames_dir, dictionary)
 
 
 if __name__ == "__main__":

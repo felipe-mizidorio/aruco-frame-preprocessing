@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from generate_markers import generate_marker, save_markers
+from aruco_pipeline.markers.generate_markers import generate_marker, save_markers
 
 # --- generate_marker ---
 

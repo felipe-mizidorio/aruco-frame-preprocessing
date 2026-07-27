@@ -7,8 +7,9 @@ import cv2
 from cv2.typing import MatLike
 from fpdf import FPDF
 
-import pipeline_io
-from schemas import MarkerSheetManifest
+from ..config import load_config
+from ..core import pipeline_io
+from ..core.schemas import MarkerSheetManifest
 
 logger = logging.getLogger(__name__)
 
@@ -153,32 +154,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--num-markers",
         type=int,
-        default=20,
+        default=None,
         help="Number of markers to generate (IDs 0 to N-1).",
     )
     parser.add_argument(
         "--side-pixels",
         type=int,
-        default=236,
+        default=None,
         help="Side length of the coded area, in pixels (excludes white margin).",
     )
     parser.add_argument(
         "--margin-pixels",
         type=int,
-        default=59,
+        default=None,
         help="White margin added around the marker, in pixels, on each side.",
     )
     parser.add_argument(
         "--dictionary",
         type=str,
-        default="DICT_4X4_50",
+        default=None,
         choices=sorted(pipeline_io.ARUCO_DICTIONARIES.keys()),
         help="ArUco dictionary to use.",
     )
     parser.add_argument(
         "--dpi",
         type=int,
-        default=300,
+        default=None,
         help="DPI assumed when converting pixels to physical mm size for the PDF.",
     )
     parser.add_argument(
@@ -196,7 +197,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--page-format",
         type=str,
-        default="A4",
+        default=None,
         choices=sorted(PAGE_FORMATS_MM.keys()),
         help="Page format for the PDF sheet.",
     )
@@ -207,23 +208,33 @@ def main() -> None:
     pipeline_io.configure_logging()
     args = parse_args()
 
+    cfg = load_config().markers
+    num_markers = args.num_markers if args.num_markers is not None else cfg.num_markers
+    side_pixels = args.side_pixels if args.side_pixels is not None else cfg.side_pixels
+    margin_pixels = (
+        args.margin_pixels if args.margin_pixels is not None else cfg.margin_pixels
+    )
+    dictionary = args.dictionary if args.dictionary is not None else cfg.dictionary
+    dpi = args.dpi if args.dpi is not None else cfg.dpi
+    page_format = args.page_format if args.page_format is not None else cfg.page_format
+
     marker_paths = save_markers(
-        args.num_markers,
-        args.side_pixels,
-        args.margin_pixels,
+        num_markers,
+        side_pixels,
+        margin_pixels,
         args.output_dir,
-        args.dictionary,
-        args.dpi,
+        dictionary,
+        dpi,
     )
 
-    total_side_pixels = args.side_pixels + 2 * args.margin_pixels
-    marker_side_mm = pixels_to_mm(total_side_pixels, args.dpi)
+    total_side_pixels = side_pixels + 2 * margin_pixels
+    marker_side_mm = pixels_to_mm(total_side_pixels, dpi)
 
     build_marker_sheet(
         marker_paths,
         marker_side_mm,
         Path(args.output_dir) / args.pdf_name,
-        page_format=args.page_format,
+        page_format=page_format,
     )
 
 

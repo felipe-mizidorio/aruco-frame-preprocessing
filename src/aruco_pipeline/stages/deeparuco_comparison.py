@@ -8,12 +8,13 @@ from typing import Any
 import cv2
 import numpy as np
 
-import pipeline_io
-from deeparuco_vendor.aruco import find_id
-from deeparuco_vendor.heatmaps import pos_from_heatmap
-from deeparuco_vendor.losses import weighted_loss
-from deeparuco_vendor.utils import marker_from_corners, ordered_corners
-from schemas import ComparisonFile, DetectionsFile
+from ..config import load_config
+from ..core import pipeline_io
+from ..core.schemas import ComparisonFile, DetectionsFile
+from ..deeparuco_vendor.aruco import find_id
+from ..deeparuco_vendor.heatmaps import pos_from_heatmap
+from ..deeparuco_vendor.losses import weighted_loss
+from ..deeparuco_vendor.utils import marker_from_corners, ordered_corners
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +48,18 @@ class DeepArucoModels:
     decode_markers: Any
 
 
-def _download_weights(target_dir: Path) -> None:
+def _download_weights(
+    target_dir: Path,
+    base_url: str = _BASE_URL,
+    filenames: dict[str, str] = _MODEL_FILENAMES,
+) -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
-    for filename in _MODEL_FILENAMES.values():
+    for filename in filenames.values():
         target = target_dir / filename
         if not target.exists():
             logger.info("Downloading %s...", filename)
             try:
-                urllib.request.urlretrieve(f"{_BASE_URL}/{filename}", target)
+                urllib.request.urlretrieve(f"{base_url}/{filename}", target)
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to download {filename}. Download manually from "
@@ -62,16 +67,22 @@ def _download_weights(target_dir: Path) -> None:
                 ) from e
 
 
-def load_deeparuco_models(weights_dir: Path | None = None) -> DeepArucoModels:
+def load_deeparuco_models(
+    weights_dir: Path | None = None,
+    *,
+    base_url: str = _BASE_URL,
+    filenames: dict[str, str] = _MODEL_FILENAMES,
+    default_dir: Path = DEFAULT_WEIGHTS_DIR,
+) -> DeepArucoModels:
     import tensorflow as tf
     from tensorflow.keras.models import load_model
     from ultralytics import YOLO
 
     if weights_dir is None:
-        _download_weights(DEFAULT_WEIGHTS_DIR)
-        weights_dir = DEFAULT_WEIGHTS_DIR
+        _download_weights(default_dir, base_url=base_url, filenames=filenames)
+        weights_dir = default_dir
 
-    for filename in _MODEL_FILENAMES.values():
+    for filename in filenames.values():
         path = weights_dir / filename
         if not path.exists():
             raise RuntimeError(
@@ -79,12 +90,12 @@ def load_deeparuco_models(weights_dir: Path | None = None) -> DeepArucoModels:
                 "https://github.com/AVAuco/deeparuco/tree/master/models"
             )
 
-    detector = YOLO(str(weights_dir / _MODEL_FILENAMES["detector"]))
+    detector = YOLO(str(weights_dir / filenames["detector"]))
     regressor = load_model(
-        str(weights_dir / _MODEL_FILENAMES["regressor"]),
+        str(weights_dir / filenames["regressor"]),
         custom_objects={"weighted_loss": weighted_loss},
     )
-    decoder = load_model(str(weights_dir / _MODEL_FILENAMES["decoder"]))
+    decoder = load_model(str(weights_dir / filenames["decoder"]))
 
     @tf.function(reduce_retracing=True)
     def refine_corners(crops: Any) -> Any:
@@ -435,7 +446,14 @@ def main() -> None:
     detections = detections_file.to_dict()
     frames_dir = pipeline_io.session_dir(args.detections)
 
-    models = load_deeparuco_models(args.model_weights)
+    da = load_config().deeparuco
+    default_dir = Path(da.weights_dir).expanduser()
+    models = load_deeparuco_models(
+        args.model_weights,
+        base_url=da.base_url,
+        filenames=da.weights,
+        default_dir=default_dir,
+    )
     da_results = run_deeparuco(detections, frames_dir, models)
 
     compared = compare_frames(detections["detections"], da_results)
@@ -444,7 +462,7 @@ def main() -> None:
         compared,
         summary,
         frames_dir,
-        weights_path=args.model_weights or DEFAULT_WEIGHTS_DIR,
+        weights_path=args.model_weights or default_dir,
         dictionary=detections_file.dictionary,
     )
 

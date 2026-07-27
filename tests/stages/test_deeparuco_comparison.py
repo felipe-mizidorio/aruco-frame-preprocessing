@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from deeparuco_comparison import (
+from aruco_pipeline.stages.deeparuco_comparison import (
     DeepArucoModels,
     compare_frame,
     compare_frames,
@@ -82,7 +82,8 @@ def test_run_deeparuco_returns_entry_per_frame(tmp_path: Path) -> None:
     models = mock.MagicMock(spec=DeepArucoModels(None, None, None, None, None))
 
     with mock.patch(
-        "deeparuco_comparison.run_deeparuco_on_image", return_value=([], [])
+        "aruco_pipeline.stages.deeparuco_comparison.run_deeparuco_on_image",
+        return_value=([], []),
     ):
         result = run_deeparuco(detections_data, tmp_path, models)
 
@@ -252,7 +253,9 @@ def test_save_comparison_logs_output_path(tmp_path: Path, caplog) -> None:
         "id_agreement_rate": 0.8,
         "mean_corner_distance_px": 2.5,
     }
-    with caplog.at_level(logging.INFO, logger="deeparuco_comparison"):
+    with caplog.at_level(
+        logging.INFO, logger="aruco_pipeline.stages.deeparuco_comparison"
+    ):
         save_comparison(
             [],
             summary,

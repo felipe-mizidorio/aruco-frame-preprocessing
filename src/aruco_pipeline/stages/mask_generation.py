@@ -22,8 +22,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-import pipeline_io
-from schemas import FilterManifest
+from ..core import pipeline_io
+from ..core.schemas import FilterManifest
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +43,7 @@ def _marker_sides_px(corners: np.ndarray) -> np.ndarray:
     return np.linalg.norm(corners - np.roll(corners, -1, axis=0), axis=1)
 
 
-def generate_mask(
-    marker_corners: list, width: int, height: int
-) -> np.ndarray | None:
+def generate_mask(marker_corners: list, width: int, height: int) -> np.ndarray | None:
     """Binary hull mask for one frame, or None when markers are insufficient.
 
     Args:
