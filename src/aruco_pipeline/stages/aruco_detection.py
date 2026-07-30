@@ -32,6 +32,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _empty_entry(filename: str, frame_index: int) -> DetectionEntry:
+    """A DetectionEntry for a frame with no usable markers."""
+    return DetectionEntry(
+        filename=filename,
+        frame_index=frame_index,
+        markers_detected=0,
+        marker_ids=[],
+        corners=[],
+    )
+
+
 def detect_markers(
     metadata: VideoMetadata, frames_dir: Path, dictionary_name: str = "DICT_4X4_250"
 ) -> list[DetectionEntry]:
@@ -50,30 +61,14 @@ def detect_markers(
 
         if image is None:
             logger.error("Cannot load image: %s", frame_path)
-            detections.append(
-                DetectionEntry(
-                    filename=frame.filename,
-                    frame_index=frame.frame_index,
-                    markers_detected=0,
-                    marker_ids=[],
-                    corners=[],
-                )
-            )
+            detections.append(_empty_entry(frame.filename, frame.frame_index))
             continue
 
         corners, ids, _ = detector.detectMarkers(image)
 
         if ids is None:
             logger.warning("No markers detected in frame: %s", frame.filename)
-            detections.append(
-                DetectionEntry(
-                    filename=frame.filename,
-                    frame_index=frame.frame_index,
-                    markers_detected=0,
-                    marker_ids=[],
-                    corners=[],
-                )
-            )
+            detections.append(_empty_entry(frame.filename, frame.frame_index))
             continue
 
         detections.append(
