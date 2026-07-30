@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from unittest import mock
 
@@ -25,6 +26,10 @@ def _make_fake_weights_dir(tmp_path: Path) -> Path:
     for name in _MODEL_FILES:
         (tmp_path / name).touch()
     return tmp_path
+
+
+def _fake_models() -> mock.MagicMock:
+    return mock.MagicMock(spec=DeepArucoModels(None, None, None, None, None))
 
 
 def test_load_deeparuco_models_returns_dataclass(tmp_path: Path) -> None:
@@ -59,7 +64,7 @@ def test_run_deeparuco_on_image_no_detections_returns_empty() -> None:
     detector_result = mock.MagicMock()
     detector_result.cpu.return_value.boxes = boxes_mock
 
-    models = mock.MagicMock(spec=DeepArucoModels(None, None, None, None, None))
+    models = _fake_models()
     models.detector.return_value = [detector_result]
 
     corners, ids = run_deeparuco_on_image(image, models)
@@ -79,7 +84,7 @@ def test_run_deeparuco_returns_entry_per_frame(tmp_path: Path) -> None:
             {"filename": "frame_0001.jpg", "frame_index": 1},
         ]
     }
-    models = mock.MagicMock(spec=DeepArucoModels(None, None, None, None, None))
+    models = _fake_models()
 
     with mock.patch(
         "aruco_pipeline.stages.deeparuco_comparison.run_deeparuco_on_image",
@@ -101,7 +106,7 @@ def test_run_deeparuco_skips_missing_frame(tmp_path: Path) -> None:
             {"filename": "missing.jpg", "frame_index": 0},
         ]
     }
-    models = mock.MagicMock(spec=DeepArucoModels(None, None, None, None, None))
+    models = _fake_models()
     result = run_deeparuco(detections_data, tmp_path, models)
     assert result == []
 
@@ -245,8 +250,6 @@ def test_save_comparison_records_requested_dictionary(tmp_path: Path) -> None:
 
 
 def test_save_comparison_logs_output_path(tmp_path: Path, caplog) -> None:
-    import logging
-
     summary = {
         "opencv_detection_rate": 1.0,
         "deeparuco_detection_rate": 0.9,

@@ -213,7 +213,9 @@ def make_session(tmp_path: Path, n_sharp: int, n_blurred: int) -> DetectionsFile
             write_sharp_frame(tmp_path / name, rng)
         else:
             write_blurred_frame(tmp_path / name, rng)
-        entries.append(DetectionEntry(name, i, 1, [3], [[[0, 0], [1, 0], [1, 1], [0, 1]]]))
+        entries.append(
+            DetectionEntry(name, i, 1, [3], [[[0, 0], [1, 0], [1, 1], [0, 1]]])
+        )
     return make_detections(entries)
 
 
@@ -274,9 +276,7 @@ def test_filter_frames_excludes_blur_rejects(tmp_path: Path) -> None:
     detections = make_session(tmp_path, n_sharp=8, n_blurred=2)
     rejects, _ = compute_blur_rejects(detections, tmp_path)
 
-    result = filter_frames(
-        detections, tmp_path, min_markers=1, blur_rejects=rejects
-    )
+    result = filter_frames(detections, tmp_path, min_markers=1, blur_rejects=rejects)
 
     kept = {e.filename for e in result}
     assert "frame_0008.jpg" not in kept
@@ -288,9 +288,7 @@ def test_filter_frames_excludes_blur_rejects(tmp_path: Path) -> None:
 def test_save_manifest_records_sharpness_stats(tmp_path: Path) -> None:
     detections = make_session(tmp_path, n_sharp=8, n_blurred=2)
     rejects, stats = compute_blur_rejects(detections, tmp_path)
-    filtered = filter_frames(
-        detections, tmp_path, min_markers=1, blur_rejects=rejects
-    )
+    filtered = filter_frames(detections, tmp_path, min_markers=1, blur_rejects=rejects)
 
     save_manifest(filtered, detections, tmp_path, min_markers=1, sharpness=stats)
 

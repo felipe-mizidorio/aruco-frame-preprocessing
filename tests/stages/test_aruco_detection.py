@@ -22,6 +22,13 @@ def make_metadata(tmp_path: Path, frames: list[FrameEntry]) -> VideoMetadata:
     )
 
 
+def single_frame_metadata(
+    tmp_path: Path, filename: str = "frame_0000.jpg"
+) -> VideoMetadata:
+    frame = FrameEntry(frame_index=0, timestamp_s=0.0, filename=filename)
+    return make_metadata(tmp_path, [frame])
+
+
 def write_blank_jpeg(path: Path) -> None:
     blank = np.zeros((200, 200, 3), dtype=np.uint8)
     cv2.imwrite(str(path), blank)
@@ -46,10 +53,7 @@ def write_marker_jpeg(
 
 def test_detect_markers_blank_image_returns_zero_markers(tmp_path: Path) -> None:
     write_blank_jpeg(tmp_path / "frame_0000.jpg")
-    metadata = make_metadata(
-        tmp_path,
-        [FrameEntry(frame_index=0, timestamp_s=0.0, filename="frame_0000.jpg")],
-    )
+    metadata = single_frame_metadata(tmp_path)
 
     result = detect_markers(metadata, tmp_path)
 
@@ -60,10 +64,7 @@ def test_detect_markers_blank_image_returns_zero_markers(tmp_path: Path) -> None
 
 def test_detect_markers_finds_aruco_marker(tmp_path: Path) -> None:
     write_marker_jpeg(tmp_path / "frame_0000.jpg", marker_id=0)
-    metadata = make_metadata(
-        tmp_path,
-        [FrameEntry(frame_index=0, timestamp_s=0.0, filename="frame_0000.jpg")],
-    )
+    metadata = single_frame_metadata(tmp_path)
 
     result = detect_markers(metadata, tmp_path)
 
@@ -76,10 +77,7 @@ def test_detect_markers_uses_requested_dictionary(tmp_path: Path) -> None:
     write_marker_jpeg(
         tmp_path / "frame_0000.jpg", marker_id=0, dictionary=cv2.aruco.DICT_5X5_50
     )
-    metadata = make_metadata(
-        tmp_path,
-        [FrameEntry(frame_index=0, timestamp_s=0.0, filename="frame_0000.jpg")],
-    )
+    metadata = single_frame_metadata(tmp_path)
 
     result = detect_markers(metadata, tmp_path, dictionary_name="DICT_5X5_50")
 
@@ -93,10 +91,7 @@ def test_detect_markers_default_dictionary_misses_other_dictionary_marker(
     write_marker_jpeg(
         tmp_path / "frame_0000.jpg", marker_id=0, dictionary=cv2.aruco.DICT_5X5_50
     )
-    metadata = make_metadata(
-        tmp_path,
-        [FrameEntry(frame_index=0, timestamp_s=0.0, filename="frame_0000.jpg")],
-    )
+    metadata = single_frame_metadata(tmp_path)
 
     result = detect_markers(metadata, tmp_path)  # default DICT_4X4_250
 
@@ -104,9 +99,7 @@ def test_detect_markers_default_dictionary_misses_other_dictionary_marker(
 
 
 def test_detect_markers_skips_missing_frame(tmp_path: Path) -> None:
-    metadata = make_metadata(
-        tmp_path, [FrameEntry(frame_index=0, timestamp_s=0.0, filename="missing.jpg")]
-    )
+    metadata = single_frame_metadata(tmp_path, filename="missing.jpg")
 
     result = detect_markers(metadata, tmp_path)
 

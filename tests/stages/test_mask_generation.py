@@ -44,7 +44,7 @@ def write_frame(path: Path, w: int = 320, h: int = 240) -> None:
 # --- generate_mask (single frame) ---
 
 
-def test_hull_interior_white_background_black(tmp_path: Path) -> None:
+def test_hull_interior_white_background_black() -> None:
     corners = [square(100, 100, 20), square(200, 100, 20), square(150, 180, 20)]
     mask = generate_mask(corners, width=320, height=240)
 
@@ -56,7 +56,7 @@ def test_hull_interior_white_background_black(tmp_path: Path) -> None:
     assert mask[235, 315] == 0
 
 
-def test_margin_extends_beyond_hull(tmp_path: Path) -> None:
+def test_margin_extends_beyond_hull() -> None:
     side = 20.0
     corners = [square(100, 100, side), square(200, 100, side), square(150, 180, side)]
     mask = generate_mask(corners, width=320, height=240)
@@ -67,7 +67,7 @@ def test_margin_extends_beyond_hull(tmp_path: Path) -> None:
     assert mask[90 - int(HULL_MARGIN_MARKER_SIDES * side) + 5, 150] == 255
 
 
-def test_too_few_markers_returns_none(tmp_path: Path) -> None:
+def test_too_few_markers_returns_none() -> None:
     corners = [square(100, 100, 20)] * (MIN_MARKERS_FOR_HULL - 1)
     assert generate_mask(corners, width=320, height=240) is None
 
@@ -83,15 +83,23 @@ def test_generate_masks_writes_colmap_convention_files(tmp_path: Path) -> None:
 
     manifest = make_manifest(
         {
-            "frame_0000.jpg": [square(100, 100, 20), square(200, 100, 20), square(150, 180, 20)],
+            "frame_0000.jpg": [
+                square(100, 100, 20),
+                square(200, 100, 20),
+                square(150, 180, 20),
+            ],
             "frame_0001.jpg": [square(100, 100, 20)],  # too few -> full-white fallback
         }
     )
 
     stats = generate_masks(manifest, tmp_path)
 
-    m0 = cv2.imread(str(filtered / "masks" / "frame_0000.jpg.png"), cv2.IMREAD_GRAYSCALE)
-    m1 = cv2.imread(str(filtered / "masks" / "frame_0001.jpg.png"), cv2.IMREAD_GRAYSCALE)
+    m0 = cv2.imread(
+        str(filtered / "masks" / "frame_0000.jpg.png"), cv2.IMREAD_GRAYSCALE
+    )
+    m1 = cv2.imread(
+        str(filtered / "masks" / "frame_0001.jpg.png"), cv2.IMREAD_GRAYSCALE
+    )
     assert m0 is not None and m1 is not None
     assert m0[5, 5] == 0  # restrictive mask
     assert m1.min() == 255  # full-white fallback keeps everything
@@ -105,7 +113,13 @@ def test_generate_masks_updates_manifest_on_disk(tmp_path: Path) -> None:
     filtered.mkdir()
     write_frame(filtered / "frame_0000.jpg")
     manifest = make_manifest(
-        {"frame_0000.jpg": [square(100, 100, 20), square(200, 100, 20), square(150, 180, 20)]}
+        {
+            "frame_0000.jpg": [
+                square(100, 100, 20),
+                square(200, 100, 20),
+                square(150, 180, 20),
+            ]
+        }
     )
     (tmp_path / "manifest.json").write_text(json.dumps(manifest.to_dict()))
 
