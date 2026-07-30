@@ -9,12 +9,6 @@ import yaml
 # src/aruco_pipeline/config.py -> parents[2] is the repo root.
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "configs" / "pipeline.yaml"
 
-_DEFAULT_WEIGHTS = {
-    "detector": "det_luma_bc_s.pt",
-    "regressor": "reg_hmap_8.h5",
-    "decoder": "dec_new.h5",
-}
-
 
 @dataclass
 class FrameExtractionConfig:
@@ -41,7 +35,13 @@ class MarkersConfig:
 class DeepArucoConfig:
     base_url: str = "https://raw.githubusercontent.com/AVAuco/deeparuco/master/models"
     weights_dir: str = "~/.cache/deeparuco"
-    weights: dict[str, str] = field(default_factory=lambda: dict(_DEFAULT_WEIGHTS))
+    weights: dict[str, str] = field(
+        default_factory=lambda: {
+            "detector": "det_luma_bc_s.pt",
+            "regressor": "reg_hmap_8.h5",
+            "decoder": "dec_new.h5",
+        }
+    )
 
 
 @dataclass
