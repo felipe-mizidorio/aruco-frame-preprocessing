@@ -55,7 +55,6 @@ def save_markers(
     dictionary = pipeline_io.ARUCO_DICTIONARIES[dictionary_name]
 
     paths: list[Path] = []
-    generated_ids = []
     for i in range(num_markers):
         image = generate_marker(dictionary, i, side_pixels)
         image = add_white_margin(image, margin_pixels)
@@ -63,19 +62,17 @@ def save_markers(
         cv2.imwrite(str(out_path), image)
         logger.info("Marker %d saved to %s", i, out_path)
         paths.append(out_path)
-        generated_ids.append(i)
 
+    total_side_pixels = side_pixels + 2 * margin_pixels
     manifest = MarkerSheetManifest(
         dictionary=dictionary_name,
         num_markers=num_markers,
-        ids=generated_ids,
+        ids=list(range(num_markers)),
         side_pixels=side_pixels,
         margin_pixels=margin_pixels,
-        total_image_side_pixels=side_pixels + 2 * margin_pixels,
+        total_image_side_pixels=total_side_pixels,
         dpi=dpi,
-        total_image_side_mm=round(
-            pixels_to_mm(side_pixels + 2 * margin_pixels, dpi), 3
-        ),
+        total_image_side_mm=round(pixels_to_mm(total_side_pixels, dpi), 3),
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
     manifest_path = output_dir / "manifest.json"
