@@ -261,7 +261,7 @@ def _mean_corner_distance(
     cv_ids: list[int],
     da_ids: list[int],
 ) -> float:
-    da_corner_by_id = {id_: da_corners[i] for i, id_ in enumerate(da_ids)}
+    da_corner_by_id = dict(zip(da_ids, da_corners))
     distances: list[float] = []
     seen: set[int] = set()
     for id_, ca in zip(cv_ids, cv_corners):
