@@ -45,6 +45,14 @@ class DeepArucoConfig:
 
 
 @dataclass
+class MaskGenerationConfig:
+    text_prompt: str = "head."
+    detector_model: str = "IDEA-Research/grounding-dino-base"
+    segmenter_model: str = "facebook/sam2.1-hiera-large"
+    device: str = "auto"
+
+
+@dataclass
 class PipelineConfig:
     dictionary: str = "DICT_4X4_250"
     frame_extraction: FrameExtractionConfig = field(
@@ -53,6 +61,7 @@ class PipelineConfig:
     frame_filtering: FrameFilteringConfig = field(default_factory=FrameFilteringConfig)
     markers: MarkersConfig = field(default_factory=MarkersConfig)
     deeparuco: DeepArucoConfig = field(default_factory=DeepArucoConfig)
+    mask_generation: MaskGenerationConfig = field(default_factory=MaskGenerationConfig)
 
 
 def _build(cls: type, data: Any):

@@ -1,0 +1,20 @@
+services:
+  pipeline:
+    build: .
+    image: aruco-pipeline:latest
+    # Match host UID/GID so session files in ./data stay owned by you.
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ./data:/data
+      - hf-cache:/cache/huggingface
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  hf-cache:

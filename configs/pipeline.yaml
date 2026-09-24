@@ -18,6 +18,12 @@ markers:
   dpi: 300
   page_format: A4
 
+mask_generation:
+  text_prompt: "head."             # Grounding DINO prompt (lowercase, ends with '.')
+  detector_model: IDEA-Research/grounding-dino-base
+  segmenter_model: facebook/sam2.1-hiera-large
+  device: auto                     # auto | cuda | cpu
+
 deeparuco:
   base_url: "https://raw.githubusercontent.com/AVAuco/deeparuco/master/models"
   weights_dir: "~/.cache/deeparuco"

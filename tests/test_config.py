@@ -61,3 +61,14 @@ def test_frame_extraction_stride_defaults_to_none(monkeypatch):
     monkeypatch.setattr(sys, "argv", argv)
     args = frame_extraction.parse_args()
     assert args.stride is None
+
+
+def test_mask_generation_section(tmp_path: Path):
+    (tmp_path / "pipeline.yaml").write_text(
+        'mask_generation:\n  text_prompt: "person."\n  device: cpu\n'
+    )
+    cfg = load_config(tmp_path / "pipeline.yaml").mask_generation
+    assert cfg.text_prompt == "person."
+    assert cfg.device == "cpu"
+    # unset keys keep the dataclass defaults
+    assert cfg.segmenter_model == "facebook/sam2.1-hiera-large"
