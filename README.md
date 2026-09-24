@@ -9,8 +9,9 @@ Given a video source, the pipeline:
 1. **Extracts** frames from video files
 2. **Detects** ArUco markers in each frame using OpenCV
 3. **Filters** frames based on detection quality and marker presence
-4. **Generates** ArUco marker images for testing and calibration
-5. **Compares** classical OpenCV detection results against DeepArUco model outputs
+4. **Masks** the subject in each filtered frame with Grounded-SAM-2 (foreground masks for COLMAP)
+5. **Generates** ArUco marker images for testing and calibration
+6. **Compares** classical OpenCV detection results against DeepArUco model outputs
 
 ## Dependencies
 
@@ -21,6 +22,7 @@ Given a video source, the pipeline:
 | `numpy` | >=2.4 | Numerical operations |
 | `torch` | >=2.11 | DeepArUco inference |
 | `torchvision` | >=0.26 | Image transforms for PyTorch |
+| `transformers` | >=4.56 | Grounding DINO + SAM 2 (Grounded-SAM-2 masks) |
 
 **Dev dependencies:** `ruff` (lint + format), `pyright` (type checking), `pre-commit`
 
@@ -73,23 +75,71 @@ uv run aruco-compare --detections <session-dir>/detections.json
 uv run aruco-generate-markers
 ```
 
+`aruco-mask` runs Grounded-SAM-2 per frame: Grounding DINO finds the
+`--text-prompt` (default `"head."`) and SAM 2 segments it. The ArUco markers
+pick the right DINO box; if DINO misses, the marker bbox is the SAM 2 prompt
+instead, and with neither the frame gets a keep-all mask. Model weights
+(`grounding-dino-base`, `sam2.1-hiera-large`) download to the Hugging Face
+cache on first run. It uses CUDA when available (`--device auto|cuda|cpu`).
+CPU works, but expect several seconds per frame.
+
 Outputs to `data/markers` by default. Marker shape/count come from `configs/pipeline.yaml`'s `markers:` block (currently 20 markers, `DICT_4X4_50`, 236px coded side + 59px white margin per side, 300 DPI) unless overridden via CLI flags (`--num-markers`, `--side-pixels`, `--margin-pixels`, `--dictionary`, `--dpi`, `--output-dir`).
 
 ### Configuration
 
 Session defaults live in `configs/pipeline.yaml` — the default ArUco
 dictionary, `frame_extraction.stride`, `frame_filtering.min_markers` /
-`valid_ids`, marker-sheet generation settings, and the DeepArUco weight
-download settings (`base_url`, `weights_dir`, `weights`).
+`valid_ids`, marker-sheet generation settings, the Grounded-SAM-2 mask settings
+(`mask_generation.text_prompt`, `detector_model`, `segmenter_model`,
+`device`), and the DeepArUco weight download settings (`base_url`,
+`weights_dir`, `weights`).
 
 Precedence for every configurable value is:
 
 **CLI flag > `configs/pipeline.yaml` > hardcoded fallback in `aruco_pipeline/config.py`.**
 
 Algorithm constants that tune detection/filtering behavior (e.g.
-`BLUR_MAD_K`, `HULL_MARGIN_MARKER_SIDES`) are **not** in the yaml — they stay
+`BLUR_MAD_K`, `BOX_THRESHOLD`, `BOX_MARGIN_MARKER_SIDES`) are **not** in the yaml — they stay
 as constants in code since they are tuning knobs for the algorithms
 themselves, not per-session settings.
+
+## Running with Docker (GPU)
+
+Target: a Linux machine with an NVIDIA GPU (built for an RTX 5090). The torch
+wheels ship CUDA 13, so the host needs:
+
+- NVIDIA driver **>= 580**
+- Docker with the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+
+```bash
+docker compose build
+```
+
+Put videos under `./data`, which is mounted at `/data` in the container.
+Hugging Face weights persist in the `hf-cache` volume.
+
+```bash
+docker compose run --rm pipeline python -c "import torch; print(torch.cuda.get_device_name(0), torch.cuda.get_device_capability())"
+```
+
+```bash
+docker compose run --rm pipeline aruco-extract --input /data/video.mp4 --output-dir /data
+```
+
+```bash
+docker compose run --rm pipeline aruco-detect --metadata /data/<session>/metadata.json
+```
+
+```bash
+docker compose run --rm pipeline aruco-filter --detections /data/<session>/detections.json
+```
+
+```bash
+docker compose run --rm pipeline aruco-mask --manifest /data/<session>/manifest.json
+```
+
+Export `UID`/`GID` (e.g. `export UID GID=$(id -g)`) so session files are
+owned by your host user. The image leaves out the `deeparuco` extra.
 
 ## Project Structure
 
@@ -106,7 +156,7 @@ aruco-frame-preprocessing/
 │       │   ├── frame_extraction.py     # Video frame extraction
 │       │   ├── aruco_detection.py      # ArUco marker detection
 │       │   ├── frame_filtering.py      # Frame quality filtering
-│       │   ├── mask_generation.py      # Foreground mask generation
+│       │   ├── mask_generation.py      # Grounded-SAM-2 foreground masks
 │       │   └── deeparuco_comparison.py # OpenCV vs DeepArUco comparison
 │       ├── markers/
 │       │   └── generate_markers.py     # ArUco marker image generation
