@@ -17,6 +17,7 @@ dependencies = [
     "shapely>=2.0.0,<3.0.0",
     "fpdf2>=2.8.7",
     "pyyaml>=6.0,<7.0",
+    "transformers>=4.56,<5",
 ]
 
 [project.optional-dependencies]
@@ -62,6 +63,9 @@ select = ["E", "F", "I"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "slow: loads real Grounded-SAM-2 weights (skipped unless in the HF cache)",
+]
 
 [tool.pyright]
 include = ["src/aruco_pipeline"]
