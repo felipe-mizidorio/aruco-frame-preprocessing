@@ -38,7 +38,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 # /cache (HF weights) are mounted volumes, writable by any UID.
 # configs/ is read from /app via the editable install (config.py parents[2]).
 RUN mkdir -p /data /cache/huggingface && chmod -R 1777 /data /cache
-ENV HOME=/cache XDG_CACHE_HOME=/cache
+# The host UID has no passwd entry in the image; torch's inductor cache calls
+# getpass.getuser(), which needs USER set or it raises OSError.
+ENV HOME=/cache XDG_CACHE_HOME=/cache USER=aruco
 USER 1000
 WORKDIR /data
 
