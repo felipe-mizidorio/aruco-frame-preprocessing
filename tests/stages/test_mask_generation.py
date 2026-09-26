@@ -10,14 +10,18 @@ from aruco_pipeline.core.schemas import FilterManifest, MarkerDetection
 from aruco_pipeline.stages import mask_generation
 from aruco_pipeline.stages.mask_generation import (
     BOX_MARGIN_MARKER_SIDES,
+    MASK_DILATE_MARKER_SIDES,
     MIN_MARKERS_FOR_BOX,
     SOURCE_ARUCO_BOX,
     SOURCE_DINO,
-    SOURCE_FALLBACK_FULL,
     aruco_prompt_box,
-    generate_mask,
+    finalize_mask,
     generate_masks,
+    marker_coverage,
+    normalized_area,
+    prompt_candidates,
     select_box,
+    track_healthy,
 )
 
 
@@ -32,31 +36,69 @@ def square(cx: float, cy: float, side: float) -> list:
 
 
 THREE_MARKERS = [square(100, 100, 20), square(200, 100, 20), square(150, 180, 20)]
+DINO_BOX = [80, 70, 230, 200]  # contains all three marker centers
 
 
-class FakeModels:
-    """Stand-in for GroundedSam2: fixed DINO boxes; SAM 2 fills the box."""
+def box_mask(box, w: int = 320, h: int = 240) -> np.ndarray:
+    mask = np.zeros((h, w), dtype=bool)
+    x0, y0, x1, y1 = (int(round(v)) for v in box)
+    mask[y0 : y1 + 1, x0 : x1 + 1] = True
+    return mask
 
-    def __init__(self, boxes=(), scores=(), empty_segment: bool = False) -> None:
+
+class FakeTracker:
+    """Stand-in for GroundedSam2Tracker.
+
+    Fixed DINO boxes; `start`/`correct` segment exactly their box; `step`
+    repeats the last mask unless a scripted mask is queued in `steps`.
+    """
+
+    def __init__(
+        self,
+        boxes=(),
+        scores=(),
+        steps=(),
+        fail_corrections: bool = False,
+    ) -> None:
         self.boxes = np.asarray(boxes, dtype=np.float64).reshape(-1, 4)
         self.scores = np.asarray(scores, dtype=np.float64).reshape(-1)
-        self.empty_segment = empty_segment
-        self.segment_calls: list[np.ndarray] = []
+        self.steps = list(steps)
+        self.fail_corrections = fail_corrections
+        self.calls: list[str] = []
+        self.prompts: list[np.ndarray] = []
+        self.last = np.zeros((1, 1), dtype=bool)
 
     @property
     def info(self) -> dict:
         return {"device": "fake"}
 
     def detect(self, rgb: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        self.calls.append("detect")
         return self.boxes, self.scores
 
-    def segment(self, rgb: np.ndarray, box: np.ndarray) -> np.ndarray:
-        self.segment_calls.append(np.asarray(box))
-        mask = np.zeros(rgb.shape[:2], dtype=bool)
-        if not self.empty_segment:
-            x0, y0, x1, y1 = (int(round(v)) for v in box)
-            mask[y0 : y1 + 1, x0 : x1 + 1] = True
-        return mask
+    def start(self, rgb: np.ndarray, box: np.ndarray) -> np.ndarray:
+        self.calls.append("start")
+        self.prompts.append(np.asarray(box))
+        h, w = rgb.shape[:2]
+        self.last = box_mask(box, w, h)
+        return self.last.copy()
+
+    def step(self, rgb: np.ndarray) -> np.ndarray:
+        self.calls.append("step")
+        if self.steps:
+            self.last = self.steps.pop(0)
+        return self.last.copy()
+
+    def correct(self, box: np.ndarray) -> np.ndarray:
+        self.calls.append("correct")
+        self.prompts.append(np.asarray(box))
+        h, w = self.last.shape
+        self.last = (
+            np.zeros((h, w), dtype=bool)
+            if self.fail_corrections
+            else box_mask(box, w, h)
+        )
+        return self.last.copy()
 
 
 def make_manifest(marker_detections: dict) -> FilterManifest:
@@ -79,6 +121,24 @@ def write_frame(path: Path, w: int = 320, h: int = 240) -> None:
 
 def rgb(w: int = 320, h: int = 240) -> np.ndarray:
     return np.zeros((h, w, 3), dtype=np.uint8)
+
+
+def run_session(
+    tmp_path: Path, tracker: FakeTracker, n_frames: int = 3, corners=THREE_MARKERS
+) -> tuple[dict, list[np.ndarray]]:
+    filtered = tmp_path / "filtered"
+    filtered.mkdir()
+    names = [f"frame_{i:04d}.jpg" for i in range(n_frames)]
+    for name in names:
+        write_frame(filtered / name)
+    stats = generate_masks(
+        make_manifest({name: corners for name in names}), tmp_path, tracker
+    )
+    masks = [
+        cv2.imread(str(filtered / "masks" / f"{name}.png"), cv2.IMREAD_GRAYSCALE)
+        for name in names
+    ]
+    return stats, masks
 
 
 # --- aruco_prompt_box ---
@@ -142,57 +202,166 @@ def test_select_box_none_when_no_detections() -> None:
     assert select_box(np.empty((0, 4)), np.empty(0), np.array([[1, 1]])) is None
 
 
-# --- generate_mask (single frame) ---
+# --- prompt_candidates ---
 
 
-def test_dino_path_uses_dino_box() -> None:
-    models = FakeModels(boxes=[[80, 70, 230, 200]], scores=[0.8])
-    mask, source = generate_mask(rgb(), THREE_MARKERS, models)
+def test_candidates_dino_box_first_then_aruco_box() -> None:
+    tracker = FakeTracker(boxes=[DINO_BOX], scores=[0.8])
+    candidates = prompt_candidates(rgb(), THREE_MARKERS, tracker)
 
-    assert source == SOURCE_DINO
-    np.testing.assert_array_equal(models.segment_calls[0], [80, 70, 230, 200])
+    assert [source for _, source in candidates] == [SOURCE_DINO, SOURCE_ARUCO_BOX]
+    np.testing.assert_array_equal(candidates[0][0], DINO_BOX)
+    np.testing.assert_allclose(
+        candidates[1][0], aruco_prompt_box(THREE_MARKERS, width=320, height=240)
+    )
+
+
+def test_candidates_aruco_box_only_when_dino_misses() -> None:
+    candidates = prompt_candidates(rgb(), THREE_MARKERS, FakeTracker())
+    assert [source for _, source in candidates] == [SOURCE_ARUCO_BOX]
+
+
+def test_candidates_empty_without_any_prompt() -> None:
+    assert prompt_candidates(rgb(), [square(100, 100, 20)], FakeTracker()) == []
+
+
+# --- finalize_mask ---
+
+
+def test_finalize_mask_binary_uint8() -> None:
+    mask = finalize_mask(box_mask(DINO_BOX), THREE_MARKERS)
     assert mask.shape == (240, 320) and mask.dtype == np.uint8
     assert set(np.unique(mask)) <= {0, 255}
     assert mask[130, 150] == 255
     assert mask[5, 5] == 0
 
 
-def test_falls_back_to_aruco_box_when_dino_misses() -> None:
-    models = FakeModels()
-    mask, source = generate_mask(rgb(), THREE_MARKERS, models)
-
-    assert source == SOURCE_ARUCO_BOX
-    expected = aruco_prompt_box(THREE_MARKERS, width=320, height=240)
-    np.testing.assert_allclose(models.segment_calls[0], expected)
-    assert mask[5, 5] == 0
-
-
-def test_full_white_when_no_prompt_available() -> None:
-    models = FakeModels()
-    mask, source = generate_mask(rgb(), [square(100, 100, 20)], models)
-
-    assert source == SOURCE_FALLBACK_FULL
-    assert mask.min() == 255
-    assert models.segment_calls == []
-
-
-def test_full_white_when_segment_empty_and_no_markers() -> None:
-    models = FakeModels(boxes=[[10, 10, 50, 50]], scores=[0.9], empty_segment=True)
-    mask, source = generate_mask(rgb(), [], models)
-    assert source == SOURCE_FALLBACK_FULL
-    assert mask.min() == 255
-
-
-def test_marker_polygons_always_kept() -> None:
-    # SAM 2 returns nothing; markers must still be white.
-    models = FakeModels(boxes=[[80, 70, 230, 200]], scores=[0.8], empty_segment=True)
-    mask, _ = generate_mask(rgb(), THREE_MARKERS, models)
+def test_finalize_mask_keeps_marker_polygons_dilated() -> None:
+    mask = finalize_mask(np.zeros((240, 320), dtype=bool), THREE_MARKERS)
+    margin = int(round(MASK_DILATE_MARKER_SIDES * 20))
     for cx, cy in [(100, 100), (200, 100), (150, 180)]:
         assert mask[cy, cx] == 255
+    assert mask[100, 110 + margin - 1] == 255  # inside the dilation margin
+    assert mask[100, 125] == 0  # beyond it
     assert mask[5, 5] == 0
 
 
-# --- generate_masks (session) ---
+def test_finalize_mask_without_markers_is_segmentation() -> None:
+    seg = box_mask(DINO_BOX)
+    np.testing.assert_array_equal(finalize_mask(seg, []), np.where(seg, 255, 0))
+
+
+# --- health check ---
+
+
+def test_marker_coverage_counts_centers_inside() -> None:
+    assert marker_coverage(box_mask(DINO_BOX), THREE_MARKERS) == 1.0
+    assert marker_coverage(box_mask([90, 90, 110, 110]), THREE_MARKERS) == 1 / 3
+
+
+def test_normalized_area_is_scale_free() -> None:
+    small = normalized_area(box_mask([0, 0, 9, 9]), [square(5, 5, 2)])
+    big = normalized_area(box_mask([0, 0, 19, 19]), [square(10, 10, 4)])
+    assert small == pytest.approx(big)
+
+
+def test_unhealthy_when_empty() -> None:
+    assert not track_healthy(np.zeros((240, 320), dtype=bool), THREE_MARKERS, None)
+
+
+def test_healthy_without_markers_when_nonempty() -> None:
+    assert track_healthy(box_mask(DINO_BOX), [], None)
+
+
+def test_unhealthy_when_markers_left_outside() -> None:
+    # Covers only one of three marker centers.
+    assert not track_healthy(box_mask([90, 90, 110, 110]), THREE_MARKERS, None)
+    # Covers two of three.
+    assert track_healthy(box_mask([90, 90, 210, 110]), THREE_MARKERS, None)
+
+
+def test_unhealthy_on_area_jump() -> None:
+    ref = normalized_area(box_mask(DINO_BOX), THREE_MARKERS)
+    assert track_healthy(box_mask(DINO_BOX), THREE_MARKERS, ref)
+    full = np.ones((240, 320), dtype=bool)
+    assert not track_healthy(full, THREE_MARKERS, ref)
+
+
+# --- tracking state machine (generate_masks) ---
+
+
+def test_first_frame_anchors_then_tracks(tmp_path: Path) -> None:
+    tracker = FakeTracker(boxes=[DINO_BOX], scores=[0.8])
+    stats, masks = run_session(tmp_path, tracker)
+
+    assert tracker.calls == ["detect", "start", "step", "step"]
+    assert stats["frames_dino"] == 1
+    assert stats["frames_tracked"] == 2
+    assert stats["reanchors"] == 0 and stats["track_resets"] == 0
+    for mask in masks:
+        assert mask is not None
+        assert mask[130, 150] == 255 and mask[5, 5] == 0
+
+
+def test_drift_reanchors_keeping_memory(tmp_path: Path) -> None:
+    empty = np.zeros((240, 320), dtype=bool)
+    tracker = FakeTracker(boxes=[DINO_BOX], scores=[0.8], steps=[empty])
+    stats, masks = run_session(tmp_path, tracker)
+
+    assert tracker.calls == ["detect", "start", "step", "detect", "correct", "step"]
+    assert stats["frames_dino"] == 2
+    assert stats["frames_tracked"] == 1
+    assert stats["reanchors"] == 1 and stats["track_resets"] == 0
+    assert masks[1] is not None and masks[1][5, 5] == 0
+
+
+def test_leak_into_background_reanchors(tmp_path: Path) -> None:
+    full = np.ones((240, 320), dtype=bool)
+    tracker = FakeTracker(boxes=[DINO_BOX], scores=[0.8], steps=[full])
+    stats, _ = run_session(tmp_path, tracker)
+
+    assert "correct" in tracker.calls
+    assert stats["reanchors"] == 1
+
+
+def test_failed_reanchor_resets_to_search(tmp_path: Path) -> None:
+    empty = np.zeros((240, 320), dtype=bool)
+    tracker = FakeTracker(
+        boxes=[DINO_BOX], scores=[0.8], steps=[empty], fail_corrections=True
+    )
+    stats, masks = run_session(tmp_path, tracker)
+
+    # Frame 1: both candidates tried as corrections, then keep-all.
+    assert tracker.calls.count("correct") == 2
+    assert masks[1] is not None and masks[1].min() == 255
+    # Frame 2: a fresh track is started.
+    assert tracker.calls.count("start") == 2
+    assert stats["frames_dino"] == 2
+    assert stats["frames_fallback_full"] == 1
+    assert stats["track_resets"] == 1 and stats["reanchors"] == 0
+
+
+def test_aruco_box_anchors_when_dino_box_unhealthy(tmp_path: Path) -> None:
+    # The DINO box holds one marker center: selected, but its mask misses two.
+    tracker = FakeTracker(boxes=[[90, 90, 110, 110]], scores=[0.9])
+    stats, _ = run_session(tmp_path, tracker, n_frames=1)
+
+    assert tracker.calls == ["detect", "start", "start"]
+    np.testing.assert_allclose(
+        tracker.prompts[1], aruco_prompt_box(THREE_MARKERS, width=320, height=240)
+    )
+    assert stats["frames_aruco_box"] == 1 and stats["frames_dino"] == 0
+
+
+def test_no_prompt_falls_back_full_and_keeps_searching(tmp_path: Path) -> None:
+    tracker = FakeTracker()
+    stats, masks = run_session(
+        tmp_path, tracker, n_frames=2, corners=[square(100, 100, 20)]
+    )
+
+    assert tracker.calls == ["detect", "detect"]
+    assert stats["frames_fallback_full"] == 2
+    assert all(m is not None and m.min() == 255 for m in masks)
 
 
 def test_generate_masks_writes_colmap_convention_files(tmp_path: Path) -> None:
@@ -202,12 +371,12 @@ def test_generate_masks_writes_colmap_convention_files(tmp_path: Path) -> None:
     write_frame(filtered / "frame_0001.jpg")
     manifest = make_manifest(
         {
-            "frame_0000.jpg": THREE_MARKERS,
-            "frame_0001.jpg": [square(100, 100, 20)],  # too few, DINO misses
+            "frame_0000.jpg": THREE_MARKERS,  # DINO misses → ArUco-box anchor
+            "frame_0001.jpg": [square(100, 100, 20)],  # tracked
         }
     )
 
-    stats = generate_masks(manifest, tmp_path, FakeModels())
+    stats = generate_masks(manifest, tmp_path, FakeTracker())
 
     m0 = cv2.imread(
         str(filtered / "masks" / "frame_0000.jpg.png"), cv2.IMREAD_GRAYSCALE
@@ -216,22 +385,23 @@ def test_generate_masks_writes_colmap_convention_files(tmp_path: Path) -> None:
         str(filtered / "masks" / "frame_0001.jpg.png"), cv2.IMREAD_GRAYSCALE
     )
     assert m0 is not None and m1 is not None
-    assert m0[5, 5] == 0
-    assert m1.min() == 255
-    assert stats["frames_dino"] == 0
+    assert m0[5, 5] == 0 and m1[5, 5] == 0
     assert stats["frames_aruco_box"] == 1
-    assert stats["frames_fallback_full"] == 1
+    assert stats["frames_tracked"] == 1
+    assert stats["frames_fallback_full"] == 0
     assert stats["device"] == "fake"
 
 
 def test_generate_masks_skips_unreadable_frame(tmp_path: Path) -> None:
     (tmp_path / "filtered").mkdir()
     manifest = make_manifest({"missing.jpg": THREE_MARKERS})
+    tracker = FakeTracker()
 
-    stats = generate_masks(manifest, tmp_path, FakeModels())
+    stats = generate_masks(manifest, tmp_path, tracker)
 
     assert not (tmp_path / "filtered" / "masks" / "missing.jpg.png").exists()
     assert stats["frames_aruco_box"] == 0
+    assert tracker.calls == []
 
 
 def test_generate_masks_updates_manifest_on_disk(tmp_path: Path) -> None:
@@ -241,12 +411,15 @@ def test_generate_masks_updates_manifest_on_disk(tmp_path: Path) -> None:
     manifest = make_manifest({"frame_0000.jpg": THREE_MARKERS})
     (tmp_path / "manifest.json").write_text(json.dumps(manifest.to_dict()))
 
-    models = FakeModels(boxes=[[80, 70, 230, 200]], scores=[0.8])
-    generate_masks(manifest, tmp_path, models, manifest_path=tmp_path / "manifest.json")
+    tracker = FakeTracker(boxes=[DINO_BOX], scores=[0.8])
+    generate_masks(
+        manifest, tmp_path, tracker, manifest_path=tmp_path / "manifest.json"
+    )
 
     data = json.loads((tmp_path / "manifest.json").read_text())
     assert data["mask_dir"] == "masks"
     assert data["mask_generation"]["frames_dino"] == 1
+    assert data["mask_generation"]["reanchors"] == 0
     # SfM handoff intact
     assert data["frames"] == ["frame_0000.jpg"]
 
@@ -269,7 +442,7 @@ def test_resolve_device_rejects_unknown() -> None:
 
 
 @pytest.mark.slow
-def test_grounded_sam2_smoke() -> None:
+def test_grounded_sam2_tracker_smoke() -> None:
     """Loads the configured HF checkpoints; skipped unless already cached."""
     from huggingface_hub import try_to_load_from_cache
 
@@ -280,9 +453,14 @@ def test_grounded_sam2_smoke() -> None:
         if not isinstance(try_to_load_from_cache(repo, "config.json"), str):
             pytest.skip(f"{repo} not in HF cache")
 
-    models = mask_generation.GroundedSam2(
+    tracker = mask_generation.GroundedSam2Tracker(
         cfg.text_prompt, cfg.detector_model, cfg.segmenter_model, cfg.device
     )
-    mask, source = generate_mask(rgb(), THREE_MARKERS, models)
-    assert mask.shape == (240, 320)
-    assert source in {SOURCE_DINO, SOURCE_ARUCO_BOX, SOURCE_FALLBACK_FULL}
+    box = np.array(DINO_BOX, dtype=np.float64)
+    for mask in (
+        tracker.start(rgb(), box),
+        tracker.step(rgb()),
+        tracker.correct(box),
+        tracker.step(rgb()),
+    ):
+        assert mask.shape == (240, 320) and mask.dtype == bool

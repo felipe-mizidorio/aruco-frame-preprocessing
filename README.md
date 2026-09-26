@@ -9,7 +9,7 @@ Given a video source, the pipeline:
 1. **Extracts** frames from video files
 2. **Detects** ArUco markers in each frame using OpenCV
 3. **Filters** frames based on detection quality and marker presence
-4. **Masks** the subject in each filtered frame with Grounded-SAM-2 (foreground masks for COLMAP)
+4. **Masks** the subject in each filtered frame with Grounded-SAM-2, tracked through the video by SAM 2 (foreground masks for COLMAP)
 5. **Generates** ArUco marker images for testing and calibration
 6. **Compares** classical OpenCV detection results against DeepArUco model outputs
 
@@ -75,10 +75,16 @@ uv run aruco-compare --detections <session-dir>/detections.json
 uv run aruco-generate-markers
 ```
 
-`aruco-mask` runs Grounded-SAM-2 per frame: Grounding DINO finds the
-`--text-prompt` (default `"head."`) and SAM 2 segments it. The ArUco markers
-pick the right DINO box; if DINO misses, the marker bbox is the SAM 2 prompt
-instead, and with neither the frame gets a keep-all mask. Model weights
+`aruco-mask` anchors the subject with Grounded-SAM-2 and tracks it through the
+filtered frames with the SAM 2 video model: Grounding DINO finds the
+`--text-prompt` (default `"head."`) once, and SAM 2 follows that object from
+frame to frame, so the mask keeps the same extent across the session. The
+ArUco markers pick the right DINO box (if DINO misses, the marker bbox is the
+SAM 2 prompt instead) and check every tracked mask: if a mask loses the
+markers or suddenly grows or shrinks, the frame is re-prompted, and if that
+fails it gets a keep-all mask and tracking restarts on the next frame. Per-frame
+counts (`frames_tracked`, `reanchors`, `track_resets`, ...) are written to
+`manifest.json` under `mask_generation`. Model weights
 (`grounding-dino-base`, `sam2.1-hiera-large`) download to the Hugging Face
 cache on first run. It uses CUDA when available (`--device auto|cuda|cpu`).
 CPU works, but expect several seconds per frame.
@@ -156,7 +162,7 @@ aruco-frame-preprocessing/
 │       │   ├── frame_extraction.py     # Video frame extraction
 │       │   ├── aruco_detection.py      # ArUco marker detection
 │       │   ├── frame_filtering.py      # Frame quality filtering
-│       │   ├── mask_generation.py      # Grounded-SAM-2 foreground masks
+│       │   ├── mask_generation.py      # Grounded-SAM-2 tracked foreground masks
 │       │   └── deeparuco_comparison.py # OpenCV vs DeepArUco comparison
 │       ├── markers/
 │       │   └── generate_markers.py     # ArUco marker image generation
