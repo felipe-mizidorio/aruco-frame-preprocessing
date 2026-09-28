@@ -50,7 +50,7 @@ class PipelineConfig:
     mask_generation: MaskGenerationConfig = field(default_factory=MaskGenerationConfig)
 
 
-def _build(cls: type, data: Any):
+def _build(cls: type, data: Any) -> Any:
     """Instantiate dataclass `cls`, filling only keys it declares; nested
     dataclass fields recurse, everything else falls back to the field default.
     Unknown keys in `data` are ignored so an over-specified yaml never errors."""
@@ -62,7 +62,7 @@ def _build(cls: type, data: Any):
         if f.name not in data:
             continue
         ftype = hints[f.name]
-        if is_dataclass(ftype):
+        if isinstance(ftype, type) and is_dataclass(ftype):
             kwargs[f.name] = _build(ftype, data[f.name])
         else:
             kwargs[f.name] = data[f.name]
