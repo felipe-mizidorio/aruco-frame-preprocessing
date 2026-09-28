@@ -1,7 +1,6 @@
 import pytest
 
 from aruco_pipeline.core.schemas import (
-    ComparisonFile,
     DetectionEntry,
     DetectionsFile,
     FilterManifest,
@@ -164,30 +163,3 @@ def test_marker_sheet_manifest_from_dict_missing_key_raises() -> None:
     del data["dpi"]
     with pytest.raises(ValueError, match="dpi"):
         MarkerSheetManifest.from_dict(data, source="manifest.json")
-
-
-# --- ComparisonFile ---
-
-
-def _comparison_file_dict() -> dict:
-    return {
-        "dictionary": "DICT_4X4_250",
-        "model": "deeparuco",
-        "weights_path": "/weights",
-        "total_frames": 0,
-        "summary": {},
-        "frames": [],
-    }
-
-
-def test_comparison_file_round_trip() -> None:
-    data = _comparison_file_dict()
-    comparison = ComparisonFile.from_dict(data, source="comparison.json")
-    assert comparison.to_dict() == data
-
-
-def test_comparison_file_from_dict_missing_key_raises() -> None:
-    data = _comparison_file_dict()
-    del data["model"]
-    with pytest.raises(ValueError, match="model"):
-        ComparisonFile.from_dict(data, source="comparison.json")
