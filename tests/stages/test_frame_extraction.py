@@ -21,7 +21,7 @@ def make_test_video(
     height: int = 64,
 ) -> None:
     out = cv2.VideoWriter(
-        str(path), cv2.VideoWriter_fourcc(*"MJPG"), fps, (width, height)
+        str(path), cv2.VideoWriter.fourcc(*"MJPG"), fps, (width, height)
     )
     for _ in range(num_frames):
         out.write(np.zeros((height, width, 3), dtype=np.uint8))

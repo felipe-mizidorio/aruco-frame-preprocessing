@@ -166,11 +166,11 @@ aruco-frame-preprocessing/
 ## Development
 
 ```bash
-# Lint and format
-uv run ruff check --fix src/aruco_pipeline/
-uv run ruff format src/aruco_pipeline/
+# Lint and format (src + tests)
+uv run ruff check --fix .
+uv run ruff format .
 
-# Type check
+# Type check (src + tests)
 uv run pyright
 ```
 

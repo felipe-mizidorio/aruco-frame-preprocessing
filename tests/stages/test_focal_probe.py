@@ -15,12 +15,12 @@ def _mp4_with(payload: bytes, tmp_path: Path) -> Path:
 
 
 def test_probe_finds_xmp_focal_rational(tmp_path: Path) -> None:
-    payload = b'<exif:FocalLengthIn35mmFilm>27/1</exif:FocalLengthIn35mmFilm>'
+    payload = b"<exif:FocalLengthIn35mmFilm>27/1</exif:FocalLengthIn35mmFilm>"
     assert probe_focal_35mm(_mp4_with(payload, tmp_path)) == 27.0
 
 
 def test_probe_finds_xmp_focal_plain(tmp_path: Path) -> None:
-    payload = b'<exif:FocalLengthIn35mmFilm>24</exif:FocalLengthIn35mmFilm>'
+    payload = b"<exif:FocalLengthIn35mmFilm>24</exif:FocalLengthIn35mmFilm>"
     assert probe_focal_35mm(_mp4_with(payload, tmp_path)) == 24.0
 
 
@@ -40,7 +40,7 @@ def test_probe_metadata_free_video_returns_none(tmp_path: Path) -> None:
 
 
 def test_probe_rejects_implausible_values(tmp_path: Path) -> None:
-    payload = b'<exif:FocalLengthIn35mmFilm>9000</exif:FocalLengthIn35mmFilm>'
+    payload = b"<exif:FocalLengthIn35mmFilm>9000</exif:FocalLengthIn35mmFilm>"
     assert probe_focal_35mm(_mp4_with(payload, tmp_path)) is None
 
 
