@@ -214,3 +214,6 @@ data/*
 CLAUDE.md
 docs/superpowers/
 .claude/
+
+# graphify
+graphify-out/
