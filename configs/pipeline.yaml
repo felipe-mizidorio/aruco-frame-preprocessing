@@ -23,11 +23,3 @@ mask_generation:
   detector_model: IDEA-Research/grounding-dino-base
   segmenter_model: facebook/sam2.1-hiera-large
   device: auto                     # auto | cuda | cpu
-
-deeparuco:
-  base_url: "https://raw.githubusercontent.com/AVAuco/deeparuco/master/models"
-  weights_dir: "~/.cache/deeparuco"
-  weights:
-    detector: det_luma_bc_s.pt
-    regressor: reg_hmap_8.h5
-    decoder: dec_new.h5

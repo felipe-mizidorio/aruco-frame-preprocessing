@@ -32,7 +32,6 @@ Mask convention (COLMAP): `filtered/masks/<image filename>.png` — the mask for
 
 import argparse
 import logging
-import os
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -162,9 +161,6 @@ class GroundedSam2Tracker:
         segmenter_model: str,
         device: str = "auto",
     ) -> None:
-        # The optional deeparuco extra installs TensorFlow; keep transformers
-        # from importing it.
-        os.environ.setdefault("USE_TF", "0")
         import torch
         from transformers import (
             AutoModelForZeroShotObjectDetection,

@@ -15,7 +15,6 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_INSTALL_DIR=/opt/python \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     HF_HOME=/cache/huggingface \
-    USE_TF=0 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app

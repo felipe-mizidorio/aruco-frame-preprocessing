@@ -1,6 +1,6 @@
 # aruco-frame-preprocessing
 
-Pipeline for extracting, filtering, and preprocessing video frames using ArUco marker detection. Designed to produce clean, marker-validated frames as input for deep learning models (e.g., DeepArUco).
+Pipeline for extracting, filtering, and preprocessing video frames using ArUco marker detection. Designed to produce clean, marker-validated frames and foreground masks as input for downstream 3D reconstruction (e.g., COLMAP).
 
 ## Description
 
@@ -11,7 +11,6 @@ Given a video source, the pipeline:
 3. **Filters** frames based on detection quality and marker presence
 4. **Masks** the subject in each filtered frame with Grounded-SAM-2, tracked through the video by SAM 2 (foreground masks for COLMAP)
 5. **Generates** ArUco marker images for testing and calibration
-6. **Compares** classical OpenCV detection results against DeepArUco model outputs
 
 ## Dependencies
 
@@ -20,7 +19,7 @@ Given a video source, the pipeline:
 | `opencv-contrib-python` | >=4.13 | ArUco detection and image processing |
 | `opencv-python` | >=4.13 | Core OpenCV image I/O and processing |
 | `numpy` | >=2.4 | Numerical operations |
-| `torch` | >=2.11 | DeepArUco inference |
+| `torch` | >=2.11 | Grounding DINO + SAM 2 inference |
 | `torchvision` | >=0.26 | Image transforms for PyTorch |
 | `transformers` | >=4.56 | Grounding DINO + SAM 2 (Grounded-SAM-2 masks) |
 
@@ -42,12 +41,6 @@ uv sync --dev
 uv run pre-commit install
 ```
 
-`deeparuco_comparison.py` needs the deep-learning stack (`tensorflow`, `ultralytics`), which is an optional extra rather than a core dependency:
-
-```bash
-uv sync --dev --extra deeparuco
-```
-
 ## Usage
 
 `uv sync` installs the package in editable mode and registers the console
@@ -67,9 +60,6 @@ uv run aruco-filter --detections <session-dir>/detections.json
 
 # 4. Generate foreground masks (for COLMAP) from the filtered frames
 uv run aruco-mask --manifest <session-dir>/manifest.json
-
-# 5. Compare OpenCV detections against DeepArUco++ model outputs
-uv run aruco-compare --detections <session-dir>/detections.json
 
 # Generate ArUco marker images for testing/calibration (standalone utility)
 uv run aruco-generate-markers
@@ -97,8 +87,7 @@ Session defaults live in `configs/pipeline.yaml` — the default ArUco
 dictionary, `frame_extraction.stride`, `frame_filtering.min_markers` /
 `valid_ids`, marker-sheet generation settings, the Grounded-SAM-2 mask settings
 (`mask_generation.text_prompt`, `detector_model`, `segmenter_model`,
-`device`), and the DeepArUco weight download settings (`base_url`,
-`weights_dir`, `weights`).
+`device`).
 
 Precedence for every configurable value is:
 
@@ -145,7 +134,7 @@ docker compose run --rm pipeline aruco-mask --manifest /data/<session>/manifest.
 ```
 
 Export `UID`/`GID` (e.g. `export UID GID=$(id -g)`) so session files are
-owned by your host user. The image leaves out the `deeparuco` extra.
+owned by your host user.
 
 ## Project Structure
 
@@ -162,11 +151,9 @@ aruco-frame-preprocessing/
 │       │   ├── frame_extraction.py     # Video frame extraction
 │       │   ├── aruco_detection.py      # ArUco marker detection
 │       │   ├── frame_filtering.py      # Frame quality filtering
-│       │   ├── mask_generation.py      # Grounded-SAM-2 tracked foreground masks
-│       │   └── deeparuco_comparison.py # OpenCV vs DeepArUco comparison
-│       ├── markers/
-│       │   └── generate_markers.py     # ArUco marker image generation
-│       └── deeparuco_vendor/     # Vendored third-party DeepArUco++ code
+│       │   └── mask_generation.py      # Grounded-SAM-2 tracked foreground masks
+│       └── markers/
+│           └── generate_markers.py     # ArUco marker image generation
 ├── configs/
 │   └── pipeline.yaml            # Session defaults (see Configuration above)
 ├── data/                        # Input data (videos, raw frames)

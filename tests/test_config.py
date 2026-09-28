@@ -11,6 +11,7 @@ def test_load_full_yaml(tmp_path: Path):
         "frame_extraction:\n  stride: 4\n"
         "frame_filtering:\n  min_markers: 2\n  valid_ids: [0, 1, 2]\n"
         "markers:\n  num_markers: 8\n  dpi: 600\n"
+        # legacy section from the removed DeepArUco stage; must be ignored
         "deeparuco:\n  base_url: http://example/models\n"
     )
     cfg = load_config(tmp_path / "pipeline.yaml")
@@ -22,9 +23,7 @@ def test_load_full_yaml(tmp_path: Path):
     assert cfg.markers.dpi == 600
     # unset key inside a present section falls back to default
     assert cfg.markers.side_pixels == 236
-    assert cfg.deeparuco.base_url == "http://example/models"
-    # unset deeparuco key keeps default filenames
-    assert cfg.deeparuco.weights["detector"] == "det_luma_bc_s.pt"
+    assert not hasattr(cfg, "deeparuco")
 
 
 def test_missing_file_returns_defaults(tmp_path: Path):
