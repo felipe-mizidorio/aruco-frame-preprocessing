@@ -125,7 +125,7 @@ def rgb(w: int = 320, h: int = 240) -> np.ndarray:
 
 def run_session(
     tmp_path: Path, tracker: FakeTracker, n_frames: int = 3, corners=THREE_MARKERS
-) -> tuple[dict, list[np.ndarray]]:
+) -> tuple[dict, list[np.ndarray | None]]:
     filtered = tmp_path / "filtered"
     filtered.mkdir()
     names = [f"frame_{i:04d}.jpg" for i in range(n_frames)]
@@ -211,9 +211,9 @@ def test_candidates_dino_box_first_then_aruco_box() -> None:
 
     assert [source for _, source in candidates] == [SOURCE_DINO, SOURCE_ARUCO_BOX]
     np.testing.assert_array_equal(candidates[0][0], DINO_BOX)
-    np.testing.assert_allclose(
-        candidates[1][0], aruco_prompt_box(THREE_MARKERS, width=320, height=240)
-    )
+    expected = aruco_prompt_box(THREE_MARKERS, width=320, height=240)
+    assert expected is not None
+    np.testing.assert_allclose(candidates[1][0], expected)
 
 
 def test_candidates_aruco_box_only_when_dino_misses() -> None:
@@ -347,9 +347,9 @@ def test_aruco_box_anchors_when_dino_box_unhealthy(tmp_path: Path) -> None:
     stats, _ = run_session(tmp_path, tracker, n_frames=1)
 
     assert tracker.calls == ["detect", "start", "start"]
-    np.testing.assert_allclose(
-        tracker.prompts[1], aruco_prompt_box(THREE_MARKERS, width=320, height=240)
-    )
+    expected = aruco_prompt_box(THREE_MARKERS, width=320, height=240)
+    assert expected is not None
+    np.testing.assert_allclose(tracker.prompts[1], expected)
     assert stats["frames_aruco_box"] == 1 and stats["frames_dino"] == 0
 
 

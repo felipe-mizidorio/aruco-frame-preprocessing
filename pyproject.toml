@@ -57,7 +57,7 @@ markers = [
 ]
 
 [tool.pyright]
-include = ["src/aruco_pipeline"]
+include = ["src/aruco_pipeline", "tests"]
 exclude = ["**/node_modules", "**/__pycache__", "**/.*", ".venv"]
 pythonVersion = "3.12"
 pythonPlatform = "Linux"
